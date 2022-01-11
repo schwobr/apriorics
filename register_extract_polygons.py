@@ -1,27 +1,12 @@
 from argparse import ArgumentParser
-from cytomine import Cytomine
-from cytomine.models import (
-    Annotation,
-    AnnotationCollection,
-    AnnotationTerm,
-    TermCollection,
-    ImageInstanceCollection,
-)
-from cytomine.models.collection import CollectionPartialUploadException
 from pathlib import Path
 from pathaia.patches import slide_rois_no_image
 from PIL import Image
 import numpy as np
 from cucim import CuImage
-from skimage.morphology import (
-    binary_closing,
-    binary_dilation,
-)
 from skimage.color import rgb2hed
-import shapely
 from shapely.affinity import affine_transform
 from shapely.ops import unary_union
-from rasterio import features
 import shutil
 from skimage.color import hed_from_rgb
 from skimage.io import imsave
@@ -32,8 +17,11 @@ from apriorics.registration import (
     get_dab_mask,
     equalize_contrasts,
     convert_to_nifti,
-    register
+    register,
+    get_binary_op,
 )
+from apriorics.polygons import mask_to_polygons_layer
+from apriorics.cytomine import upload_polygons_to_cytomine
 
 HED_MAX = (hed_from_rgb * (hed_from_rgb > 0)).sum(0)
 HED_MIN = (hed_from_rgb * (hed_from_rgb < 0)).sum(0)
@@ -70,69 +58,6 @@ parser.add_argument("--tmpfolder", type=Path, default=Path("/tmp/cyto_annotation
 parser.add_argument("--outfile", type=Path)
 parser.add_argument("--logfile", type=Path)
 parser.add_argument("-v", "--verbose", action="count")
-
-
-def get_reduced_coords(coords, angle_th, distance_th):
-    vector_rep = np.diff(coords, axis=0)
-    angle_th_rad = np.deg2rad(angle_th)
-    points_removed = [0]
-    while len(points_removed):
-        points_removed = list()
-        for i in range(len(vector_rep) - 1):
-            if len(coords) - len(points_removed) == 3:
-                break
-            v01 = vector_rep[i]
-            v12 = vector_rep[i + 1]
-            d01 = np.linalg.norm(v01)
-            d12 = np.linalg.norm(v12)
-            if d01 < distance_th and d12 < distance_th:
-                points_removed.append(i + 1)
-                vector_rep[i + 1] = coords[i + 2] - coords[i]
-                continue
-            angle = np.arccos(np.dot(v01, v12) / (d01 * d12))
-            if angle < angle_th_rad:
-                points_removed.append(i + 1)
-                vector_rep[i + 1] = coords[i + 2] - coords[i]
-        coords = np.delete(coords, points_removed, axis=0)
-        vector_rep = np.diff(coords, axis=0)
-    return coords.astype(int)
-
-
-def reduce_polygon(polygon, angle_th=0, distance_th=0):
-    ext_poly_coords = get_reduced_coords(
-        np.array(polygon.exterior.coords[:]), angle_th, distance_th
-    )
-    interior_coords = [
-        get_reduced_coords(np.array(interior.coords[:]), angle_th, distance_th)
-        for interior in polygon.interiors
-    ]
-    return shapely.geometry.Polygon(ext_poly_coords, interior_coords)
-
-
-def get_binary_op(op_name):
-    if op_name == "closing":
-        return binary_closing
-    elif op_name == "dilation":
-        return binary_dilation
-    else:
-        return None
-
-
-def mask_to_polygons_layer(mask):
-    all_polygons = []
-    for shape, _ in features.shapes(mask.astype(np.int16), mask=(mask > 0)):
-        all_polygons.append(
-            reduce_polygon(shapely.geometry.shape(shape), angle_th=2, distance_th=3)
-        )
-
-    all_polygons = shapely.geometry.MultiPolygon(all_polygons)
-    if not all_polygons.is_valid:
-        all_polygons = all_polygons.buffer(0)
-        # Sometimes buffer() converts a simple Multipolygon to just a Polygon,
-        # need to keep it a Multi throughout
-        if all_polygons.type == "Polygon":
-            all_polygons = shapely.geometry.MultiPolygon([all_polygons])
-    return all_polygons
 
 
 if __name__ == "__main__":
@@ -225,7 +150,7 @@ if __name__ == "__main__":
             print("Computing mask...")
 
             ihc = Image.open(reg_path).crop(box)
-            tissue_mask = get_tissue_mask(np.array(ihc.convert('L')), whitetol=255)
+            tissue_mask = get_tissue_mask(np.array(ihc.convert("L")), whitetol=255)
             if tissue_mask.sum() < 0.99 * tissue_mask.size:
                 restart = True
                 iterations *= 2
@@ -276,55 +201,17 @@ if __name__ == "__main__":
     print("Polygons saved.")
     print("Uploading to cytomine...")
 
-    with Cytomine(
-        host=args.host, public_key=args.public_key, private_key=args.private_key
-    ) as cytomine:
-        images = ImageInstanceCollection().fetch_with_filter("project", args.id_project)
-        images = filter(lambda x: args.he_slide in x.filename, images)
-
-        try:
-            id_image = next(images).id
-        except StopIteration:
-            print(
-                f"Slide {args.he_slide} was not found in cytomine, please upload it. Stopping program..."
-            )
-            raise RuntimeError
-
-        terms = TermCollection().fetch_with_filter("project", args.id_project)
-        terms = filter(lambda x: x.name == args.term, terms)
-
-        try:
-            id_term = next(terms).id
-        except StopIteration:
-            print(
-                f"Term {args.term} was not found on cytomine, please upload it. Resuming with not term..."
-            )
-            id_term = None
-
-        annotations = AnnotationCollection()
-        for polygon in all_polygons:
-            if polygon.area < args.object_min_size:
-                continue
-            if args.polygon_type == "box":
-                bbox = shapely.geometry.box(*polygon.bounds)
-                location = bbox.wkt
-            else:
-                location = polygon.wkt
-            annotations.append(
-                Annotation(
-                    location=location,
-                    id_image=id_image,
-                    id_project=args.id_project,
-                )
-            )
-        try:
-            results = annotations.save()
-        except CollectionPartialUploadException as e:
-            print(e)
-        for _, (_, message) in results:
-            ids = map(int, message.split()[1].split(","))
-            for id in ids:
-                AnnotationTerm(id_annotation=id, id_term=id_term).save()
+    upload_polygons_to_cytomine(
+        all_polygons,
+        args.heslide,
+        args.host,
+        args.public_key,
+        args.private_key,
+        args.id_project,
+        term=args.term,
+        polygon_type=args.polygon_type,
+        object_min_size=args.object_min_size
+    )
     print("Uploading done.")
 
     shutil.rmtree(args.tmpfolder)

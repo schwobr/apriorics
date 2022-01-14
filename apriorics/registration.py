@@ -2,7 +2,6 @@ from skimage.color import rgb2hed
 import cv2
 from skimage.util import img_as_ubyte, img_as_float
 import numpy as np
-from skimage.filters import threshold_otsu
 from skimage.morphology import (
     remove_small_holes,
     remove_small_objects,
@@ -12,138 +11,9 @@ from skimage.morphology import (
 from skimage.measure import label
 from subprocess import run
 from pathlib import Path
-
-
-def get_input_images(slide, patch, h_min, h_max):
-    img = np.asarray(
-        slide.read_region(location=patch.position, level=patch.level, size=patch.size)
-    )
-    img_G = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    img_H = img_as_ubyte((rgb2hed(img) - h_min) / (h_max - h_min))
-    return img, img_G, img_H
-
-
-def get_tissue_mask(img_G, blacktol=0, whitetol=247):
-    return (img_G > blacktol) & (img_G < whitetol)
-
-
-def has_enough_tissue(he_G, ihc_G, blacktol=0, whitetol=247, area_thr=0.99):
-    size = he_G.size
-    area_thr = area_thr * size
-    mask1 = get_tissue_mask(he_G, blacktol=blacktol, whitetol=whitetol)
-    mask2 = get_tissue_mask(ihc_G, blacktol=blacktol, whitetol=whitetol)
-    return (mask1.sum() > area_thr) and (mask2.sum() > area_thr)
-
-
-def get_binary_op(op_name):
-    if op_name == "closing":
-        return binary_closing
-    elif op_name == "dilation":
-        return binary_dilation
-    else:
-        return None
-
-
-def get_dab_mask(
-    img,
-    dab_thr=0.085,
-    object_min_size=1000,
-    tissue_mask=None,
-    he_img=None,
-    binary_op=None,
-    r=10,
-):
-    img_dab = rgb2hed(img)[:, :, 2]
-
-    if tissue_mask is not None:
-        img_dab = np.ma.masked_array(img_dab, mask=tissue_mask)
-    thr = max(
-        threshold_otsu(image=img_dab, hist=None),
-        dab_thr,
-    )
-
-    mask = img_dab > thr
-    if tissue_mask is not None:
-        mask = mask & tissue_mask
-    if he_img is not None:
-        # check for artifacts
-        mask = mask & (he_img < thr)
-
-    mask = remove_small_objects(mask, min_size=object_min_size)
-
-    if binary_op is not None:
-        y, x = np.ogrid[-r : r + 1, -r : r + 1]
-        selem = x ** 2 + y ** 2 <= r ** 2
-        mask |= binary_op(mask, selem=selem)
-
-    mask = remove_small_holes(mask, area_threshold=object_min_size)
-
-    return mask
-
-
-def equalize_contrasts(
-    he_H, ihc_H, he_G, ihc_G, whitetol=220, low_percentile=5, high_percentile=95
-):
-    he_H = img_as_float(he_H)
-    ihc_H = img_as_float(ihc_H)
-    ihc_min = np.percentile(ihc_H, low_percentile)
-    ihc_max = np.percentile(ihc_H, high_percentile)
-    for img, img_g in zip((he_H, ihc_H), (he_G, ihc_G)):
-        img[:] = ((img - ihc_min) / (ihc_max - ihc_min)).clip(0, 1)
-        img[img_g > whitetol] = 0
-    return img_as_ubyte(he_H), img_as_ubyte(ihc_H)
-
-
-def convert_to_nifti(path):
-    path = Path(path)
-    base_dir = path.parent
-    path = Path(f"/data/inputs/{path.name}")
-    c2d_cmd = (
-        f"docker run -v {base_dir}:/data/inputs historeg "
-        f"c2d -mcs {path} -foreach -orient LP -spacing 1x1mm -origin 0x0mm -endfor -omc"
-        f" {path.with_suffix('.nii.gz')}"
-    )
-    run(c2d_cmd.split())
-
-
-def register(
-    base_path,
-    he_H_path,
-    ihc_H_path,
-    he_path,
-    ihc_path,
-    reg_path,
-    iterations=20000,
-):
-    he_H_path, ihc_H_path, he_path, ihc_path, reg_path = map(
-        lambda x: Path("/data/inputs") / x.relative_to(base_path),
-        (he_H_path, ihc_H_path, he_path, ihc_path, reg_path),
-    )
-    historeg_cmd = (
-        f"docker run -v {base_path}:/data/inputs historeg "
-        f"HistoReg -i {iterations} -f {he_H_path} -m {ihc_H_path} -o "
-        f"{base_path/'historeg'}"
-    )
-    run(historeg_cmd.split())
-
-    tfm_path = (
-        base_path
-        / f"historeg/{he_H_path.stem}_registered_to_{ihc_H_path.stem}"
-        / "metrics/full_resolution"
-    )
-    greedy_cmd = (
-        f"docker run -v {base_path}:/data/inputs historeg "
-        f"greedy -d 2 -rf {he_path} -rm {ihc_path} {reg_path} -r "
-        f"{tfm_path/'big_warp.nii.gz'} {tfm_path/'Affine.mat'}"
-    )
-    run(greedy_cmd.split())
-
-    c2d_cmd = (
-        f"docker run -v {base_path}:/data/inputs historeg "
-        f"c2d -mcs {reg_path} -foreach -type uchar -endfor -omc "
-        f"{reg_path.with_suffix('.png')}"
-    )
-    run(c2d_cmd.split())
+from skimage.io import imsave
+from pathaia.util.types import Coord
+from .masks import get_dab_mask, get_tissue_mask
 
 
 def get_dot_mask(slide, thumb_level=3, min_val=60, max_val=90):
@@ -256,7 +126,7 @@ def get_affine_transform(fixed, moving):
 
 
 def get_coord_transform(slide_he, slide_ihc):
-    thumb_level = slide_he.resolutions["level_count"]
+    thumb_level = slide_he.resolutions["level_count"] - 1
     mask_he = get_dot_mask(slide_he, thumb_level=thumb_level)
     mask_ihc = get_dot_mask(slide_ihc, thumb_level=thumb_level)
     rot, scale, trans = get_affine_transform(mask_ihc, mask_he)
@@ -266,6 +136,171 @@ def get_coord_transform(slide_he, slide_ihc):
 
     def _transform(x, y):
         x1, y1, _ = (affine @ np.array([x, y, 1]).T).T
-        return x1, y1
+        return Coord(x1, y1)
 
     return _transform
+
+
+def get_input_images(slide, patch, h_min=0.017, h_max=0.11):
+    """
+    Return patches from a slide that are used for registration:
+
+    Args:
+        slide: input cucim slide.
+        patch: input pathaia patch object.
+        h_min: minimum hematoxylin value for standardization.
+        h_max: maximum hematoxylin value for standardization.
+
+    Returns:
+        3-tuple containing patch as RGB image, grayscale image and with only Hematoxylin
+        channel.
+    """
+    img = np.asarray(
+        slide.read_region(location=patch.position, level=patch.level, size=patch.size)
+    )
+    img_G = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    img_H = rgb2hed(img)[:, :, 0]
+    img_H = img_as_ubyte(((img_H - h_min) / (h_max - h_min)).clip(0, 1))
+    return img, img_G, img_H
+
+
+def has_enough_tissue(img, blacktol=0, whitetol=247, area_thr=0.99):
+    """ """
+    size = img.size
+    area_thr = area_thr * size
+    mask = get_tissue_mask(img, blacktol=blacktol, whitetol=whitetol)
+    return mask.sum() > area_thr
+
+
+def get_binary_op(op_name):
+    if op_name == "closing":
+        return binary_closing
+    elif op_name == "dilation":
+        return binary_dilation
+    else:
+        return None
+
+
+def equalize_contrasts(
+    he_H, ihc_H, he_G, ihc_G, whitetol=220, low_percentile=5, high_percentile=95
+):
+    he_H = img_as_float(he_H)
+    ihc_H = img_as_float(ihc_H)
+    ihc_min = np.percentile(ihc_H, low_percentile)
+    ihc_max = np.percentile(ihc_H, high_percentile)
+    print(ihc_min, ihc_max)
+    for img, img_g in zip((he_H, ihc_H), (he_G, ihc_G)):
+        img[:] = ((img - ihc_min) / (ihc_max - ihc_min)).clip(0, 1)
+        img[img_g > whitetol] = 0
+    return img_as_ubyte(he_H), img_as_ubyte(ihc_H)
+
+
+def convert_to_nifti(path):
+    path = Path(path)
+    base_dir = path.parent
+    path = Path(f"/data/inputs/{path.name}")
+    c2d_cmd = (
+        f"docker run -v {base_dir}:/data/inputs historeg "
+        f"c2d -mcs {path} -foreach -orient LP -spacing 1x1mm -origin 0x0mm -endfor -omc"
+        f" {path.with_suffix('.nii.gz')}"
+    )
+    run(c2d_cmd.split())
+
+
+def register(
+    base_path,
+    he_H_path,
+    ihc_H_path,
+    he_path,
+    ihc_path,
+    reg_path,
+    iterations=20000,
+    resample=4,
+):
+    he_H_path, ihc_H_path, he_path, ihc_path, reg_path = map(
+        lambda x: Path("/data") / x.relative_to(base_path),
+        (he_H_path, ihc_H_path, he_path, ihc_path, reg_path),
+    )
+    historeg_cmd = (
+        f"docker run -v {base_path}:/data historeg "
+        f"HistoReg -i {iterations} -r {resample} -s1 6 -s2 8 -f {he_H_path} -m "
+        f"{ihc_H_path} -o /data/historeg"
+    )
+    run(historeg_cmd.split())
+
+    tfm_path = Path(
+        f"/data/historeg/{ihc_H_path.stem}_registered_to_{he_H_path.stem}"
+        "/metrics/full_resolution"
+    )
+    greedy_cmd = (
+        f"docker run -v {base_path}:/data historeg "
+        f"greedy -d 2 -rf {he_path} -rm {ihc_path} {reg_path} -r "
+        f"{tfm_path/'big_warp.nii.gz'} {tfm_path/'Affine.mat'}"
+    )
+    run(greedy_cmd.split())
+
+    c2d_cmd = (
+        f"docker run -v {base_path}:/data historeg "
+        f"c2d -mcs {reg_path} -foreach -type uchar -endfor -omc "
+        f"{reg_path.with_suffix('').with_suffix('.png')}"
+    )
+    run(c2d_cmd.split())
+
+
+def full_registration(
+    slide_he,
+    slide_ihc,
+    patch_he,
+    patch_ihc,
+    base_path,
+    dab_thr=0.085,
+    object_min_size=1000,
+):
+    print(f"HE: {patch_he.position} / IHC: {patch_ihc.position}")
+    he_H_path = base_path / "he_H.png"
+    ihc_H_path = base_path / "ihc_H.png"
+    he_path = base_path / "he.png"
+    ihc_path = base_path / "ihc.png"
+    reg_path = base_path / "ihc_warped.png"
+
+    he, he_G, he_H = get_input_images(slide_he, patch_he)
+    ihc, ihc_G, ihc_H = get_input_images(slide_ihc, patch_ihc)
+
+    if not (
+        has_enough_tissue(he_G, whitetol=255, area_thr=0.95)
+        and has_enough_tissue(ihc_G, whitetol=255, area_thr=0.95)
+    ):
+        print("Patch doesn't contain enough tissue, skipping.")
+        return False
+
+    mask = get_dab_mask(ihc, dab_thr=dab_thr, object_min_size=object_min_size)
+
+    if not mask.sum():
+        print("Mask would be empty, skipping.")
+        return False
+
+    # he_H, ihc_H = equalize_contrasts(he_H, ihc_H, he_G, ihc_G)
+
+    imsave(he_H_path, he_H)
+    imsave(ihc_H_path, ihc_H)
+
+    imsave(he_path, he)
+    imsave(ihc_path, ihc)
+    convert_to_nifti(he_path)
+    convert_to_nifti(ihc_path)
+
+    print("Starting registration...")
+
+    register(
+        base_path,
+        he_H_path,
+        ihc_H_path,
+        he_path.with_suffix(".nii.gz"),
+        ihc_path.with_suffix(".nii.gz"),
+        reg_path.with_suffix(".nii.gz"),
+        resample=20,
+    )
+
+    print("Registration done...")
+
+    return True

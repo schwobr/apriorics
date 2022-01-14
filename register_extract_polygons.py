@@ -86,7 +86,7 @@ if __name__ == "__main__":
     slide_he = CuImage(str(args.slidefolder / args.heslide))
     slide_ihc = CuImage(str(args.slidefolder / args.ihcslide))
     w, h = slide_he.size("XY")
-    ihc_type = IHC_MAPPING[args.ihcslide.split("-")[-1].split("_")[0]]
+    ihc_type = IHC_MAPPING[int(args.ihcslide.split("-")[-1].split("_")[0])]
 
     if args.box is not None:
         assert len(args.box) == 4

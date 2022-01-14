@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
     slide_he = CuImage(str(args.slidefolder / args.heslide))
     slide_ihc = CuImage(str(args.slidefolder / args.ihcslide))
-    w, h = slide_he.dimensions
+    w, h = slide_he.sizr("XY")
     ihc_type = IHC_MAPPING[args.ihcslide.split("-")[-1].split("_")[0]]
 
     if args.box is not None:
@@ -98,7 +98,6 @@ if __name__ == "__main__":
     if not args.tmpfolder.exists():
         args.tmpfolder.mkdir()
     historeg_path = args.tmpfolder / "historeg"
-
     crop = int(args.crop * args.psize)
     box = (crop, crop, args.psize - crop, args.psize - crop)
 

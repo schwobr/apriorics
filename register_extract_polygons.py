@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from pathlib import Path
 from pathaia.patches import slide_rois_no_image
+from pathaia.util.types import Slide
 from PIL import Image
 import numpy as np
 from cucim import CuImage
@@ -42,8 +43,7 @@ parser.add_argument(
 )
 parser.add_argument("--polygon-type", default="polygon", choices=["polygon", "box"])
 parser.add_argument(
-    "--slidefolder",
-    type=Path,
+    "--slidefolder", type=Path,
 )
 parser.add_argument("--dab-thr", type=float, default=0.085)
 parser.add_argument("--object-min-size", type=int, default=1000)
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     all_polygons = []
 
     for patch_he in slide_rois_no_image(
-        slide_he,
+        Slide(args.slidefolder / args.heslide),
         0,
         (args.psize, args.psize),
         (interval, interval),
@@ -125,13 +125,13 @@ if __name__ == "__main__":
         patch_ihc = Patch(
             id=patch_he.id,
             slidename=args.ihcslide,
-            position=patch_he.position,
+            position=coord_tfm(*patch_he.position),
             size=patch_he.size,
             level=patch_he.level,
             size_0=patch_he.size_0,
         )
-        patch_ihc.position = coord_tfm(*patch_ihc.position)
-        full_registration(
+
+        if not full_registration(
             slide_he,
             slide_ihc,
             patch_he,
@@ -139,7 +139,8 @@ if __name__ == "__main__":
             args.tmpfolder,
             dab_thr=args.dab_thr,
             object_min_size=args.object_min_size,
-        )
+        ):
+            continue
 
         print("Computing mask...")
         ihc = Image.open(args.tmpfolder / "ihc_warped.png").convert("RGB").crop(box)

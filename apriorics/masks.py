@@ -69,13 +69,13 @@ def get_mask_AE1AE3(he, ihc):
         remove_small_objects(
             remove_small_holes(he_H > 0.005, area_threshold=1000), min_size=500
         ),
-        footprint=disk(15),
+        footprint=disk(10),
     )
     mask_ihc = binary_closing(
         remove_small_objects(
             remove_small_holes(ihc_DAB > 0.03, area_threshold=1000), min_size=500
         ),
-        footprint=disk(20),
+        footprint=disk(10),
     )
     mask = remove_small_objects(mask_he & mask_ihc, min_size=500)
     return mask

@@ -1,3 +1,4 @@
+from pathlib import Path
 from cytomine import Cytomine
 from cytomine.models import (
     Annotation,
@@ -5,6 +6,8 @@ from cytomine.models import (
     AnnotationTerm,
     TermCollection,
     ImageInstanceCollection,
+    StorageCollection,
+    Project
 )
 from cytomine.models.collection import CollectionPartialUploadException
 import shapely
@@ -58,27 +61,27 @@ def polygons_to_annotations(
         else:
             location = polygon.wkt
         annotations.append(
-            Annotation(
-                location=location,
-                id_image=id_image,
-                id_project=id_project,
-            )
+            Annotation(location=location, id_image=id_image, id_project=id_project,)
         )
     return annotations
 
 
-def upload_annotations_with_terms(annotations, id_term):
+def upload_annotations_with_terms(annotations, id_project, id_image, id_term=None):
     try:
-        results = annotations.save()
+        annotations.save()
     except CollectionPartialUploadException as e:
         print(e)
-    for _, (_, message) in results:
-        ids = map(int, message.split()[1].split(","))
-        for id in ids:
-            AnnotationTerm(id_annotation=id, id_term=id_term).save()
+    if id_term is not None:
+        annotations = AnnotationCollection()
+        annotations.project = id_project
+        annotations.image = id_image
+        annotations.fetch()
+        for annotation in annotations:
+            if not annotation.term:
+                AnnotationTerm(annotation.id, id_term).save()
 
 
-def upload_to_cytomine(
+def upload_polygons_to_cytomine(
     polygons,
     slidename,
     host,
@@ -101,4 +104,43 @@ def upload_to_cytomine(
             polygon_type=polygon_type,
         )
 
-        upload_annotations_with_terms(annotations, id_term)
+        upload_annotations_with_terms(
+            annotations, id_project, id_image, id_term=id_term
+        )
+
+
+def upload_image_to_cytomine(filepath, host, public_key, private_key, id_project):
+    filepath = Path(filepath)
+
+    with Cytomine(
+        host=host,
+        public_key=public_key,
+        private_key=private_key,
+    ) as cytomine:
+
+        # Check that the file exists on your file system
+        if not filepath.exists():
+            raise ValueError("The file you want to upload does not exist")
+
+        # Check that the given project exists
+        if id_project:
+            project = Project().fetch(id_project)
+            if not project:
+                raise ValueError("Project not found")
+
+        # To upload the image, we need to know the ID of your Cytomine storage.
+        storages = StorageCollection().fetch()
+        my_storage = next(
+            filter(lambda storage: storage.user == cytomine.current_user.id, storages)
+        )
+        if not my_storage:
+            raise ValueError("Storage not found")
+
+        uploaded_file = cytomine.upload_image(
+            upload_host="http://localhost-upload",
+            filename=str(filepath),
+            id_storage=my_storage.id,
+            id_project=id_project,
+        )
+
+        print(uploaded_file)

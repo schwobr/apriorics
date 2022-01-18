@@ -15,7 +15,7 @@ from apriorics.registration import (
 )
 from apriorics.masks import get_tissue_mask, get_mask_function
 from apriorics.polygons import mask_to_polygons_layer
-from apriorics.cytomine import upload_to_cytomine
+from apriorics.cytomine import upload_polygons_to_cytomine
 
 
 IHC_MAPPING = {
@@ -131,20 +131,44 @@ if __name__ == "__main__":
             size_0=patch_he.size_0,
         )
 
-        if not full_registration(
-            slide_he,
-            slide_ihc,
-            patch_he,
-            patch_ihc,
-            args.tmpfolder,
-            dab_thr=args.dab_thr,
-            object_min_size=args.object_min_size,
-        ):
+        restart = True
+        iterations = 20000
+        count = 0
+        maxiter = 3
+
+        while restart and count < maxiter:
+            restart = not full_registration(
+                slide_he,
+                slide_ihc,
+                patch_he,
+                patch_ihc,
+                args.tmpfolder,
+                dab_thr=args.dab_thr,
+                object_min_size=args.object_min_size,
+                iterations=iterations,
+            )
+            if restart:
+                break
+            else:
+                ihc = (
+                    Image.open(args.tmpfolder / "ihc_warped.png")
+                    .convert("RGB")
+                    .crop(box)
+                )
+                tissue_mask = get_tissue_mask(
+                    np.asarray(ihc.convert("L")), whitetol=256
+                )
+                if tissue_mask.sum() < 0.999 * tissue_mask.size:
+                    restart = True
+                    iterations *= 2
+                    count += 1
+                    print("Affine registration failed, retrying...")
+
+        if restart:
+            print("Registration failed, skipping...")
             continue
 
         print("Computing mask...")
-        ihc = Image.open(args.tmpfolder / "ihc_warped.png").convert("RGB").crop(box)
-        tissue_mask = get_tissue_mask(np.asarray(ihc.convert("L")), whitetol=255)
         he = Image.open(args.tmpfolder / "he.png")
         he = np.asarray(he.convert("RGB").crop(box))
         mask = get_mask_function(ihc_type)(he, np.asarray(ihc))
@@ -174,7 +198,7 @@ if __name__ == "__main__":
     print("Polygons saved.")
     print("Uploading to cytomine...")
 
-    upload_to_cytomine(
+    upload_polygons_to_cytomine(
         all_polygons,
         args.heslide,
         args.host,

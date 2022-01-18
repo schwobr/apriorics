@@ -255,6 +255,7 @@ def full_registration(
     base_path,
     dab_thr=0.085,
     object_min_size=1000,
+    iterations=20000,
 ):
     print(f"HE: {patch_he.position} / IHC: {patch_ihc.position}")
     he_H_path = base_path / "he_H.png"
@@ -267,8 +268,7 @@ def full_registration(
     ihc, ihc_G, ihc_H = get_input_images(slide_ihc, patch_ihc)
 
     if not (
-        has_enough_tissue(he_G, whitetol=255, area_thr=0.95)
-        and has_enough_tissue(ihc_G, whitetol=255, area_thr=0.95)
+        has_enough_tissue(he_G, whitetol=255, area_thr=0.7)
     ):
         print("Patch doesn't contain enough tissue, skipping.")
         return False
@@ -299,6 +299,7 @@ def full_registration(
         ihc_path.with_suffix(".nii.gz"),
         reg_path.with_suffix(".nii.gz"),
         resample=20,
+        iterations=iterations,
     )
 
     print("Registration done...")

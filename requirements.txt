@@ -1,0 +1,12 @@
+pathaia
+pillow
+numpy
+cucim
+shapely
+pytorch
+torchvision
+albumentations
+scikit-image
+pandas
+opencv-python
+rasterio

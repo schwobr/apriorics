@@ -83,3 +83,11 @@ def get_mask_AE1AE3(he, ihc):
 
 def get_mask_function(ihc_type):
     return globals()[f"get_mask_{ihc_type}"]
+
+
+def update_full_mask(full_mask, mask, x, y, ):
+    h, w = full_mask.shape
+    p_h, p_w = mask.shape
+    dy = min(h, y+p_h) - y
+    dx = min(w, x+p_w) - x
+    full_mask[y:y+dy, x:x+dx] = mask[:dy, :dx]

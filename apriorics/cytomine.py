@@ -144,3 +144,9 @@ def upload_image_to_cytomine(filepath, host, public_key, private_key, id_project
         )
 
         print(uploaded_file)
+
+
+def get_uploaded_images(host, public_key, private_key, id_project):
+    with Cytomine(host=host, public_key=public_key, private_key=private_key) as _:
+        images = ImageInstanceCollection().fetch_with_filter("project", id_project)
+    return [image.instanceFilename for image in images]

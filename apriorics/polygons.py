@@ -65,7 +65,8 @@ def hovernet_to_wkt(infile, outfile, slide_height=None):
     polygons = []
     for k in hovernet_dict["nuc"]:
         polygon = Polygon(hovernet_dict["nuc"][k]["contour"])
-        polygons.append(polygon)
+        if polygon.is_valid:
+            polygons.append(polygon)
     polygons = MultiPolygon(polygons)
     if slide_height is not None:
         polygons = affine_transform(

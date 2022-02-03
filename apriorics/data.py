@@ -16,4 +16,8 @@ class SegmentationDataset(Dataset):
         self.transforms = Compose(ifnone(transforms, []))
 
     def __len__(self):
-        return len(self.patch_coords)
+        return len(self.patches)
+
+    def __getitem__(self, idx):
+        patch = self.patches[idx]
+        slide = self.slides[self.slide_idxs[idx]]

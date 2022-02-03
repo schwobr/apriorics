@@ -1,4 +1,4 @@
-from apriorics.cytomine import upload_image_to_cytomine
+from apriorics.cytomine import upload_image_to_cytomine, get_uploaded_images
 from argparse import ArgumentParser
 from pathaia.util.paths import get_files
 
@@ -40,7 +40,12 @@ if __name__ == "__main__":
 
         filepaths = filepaths.filter(_filter)
 
+    uploaded_images = get_uploaded_images(
+        args.host, args.public_key, args.private_key, args.id_project
+    )
+
     for filepath in filepaths:
-        upload_image_to_cytomine(
-            filepath, args.host, args.public_key, args.private_key, args.id_project
-        )
+        if filepath.name not in uploaded_images:
+            upload_image_to_cytomine(
+                filepath, args.host, args.public_key, args.private_key, args.id_project
+            )

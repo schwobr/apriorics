@@ -1,5 +1,6 @@
 from os import PathLike
 from typing import List, Tuple
+from cv2 import transform
 import numpy as np
 from torch.utils.data import Dataset
 from pathaia.util.types import Slide 
@@ -34,4 +35,5 @@ class SegmentationDataset(Dataset):
         mask = self.masks[self.patches_slide[idx]]
         slide_region = slide.read_region([int(patch["x"]),int(patch["y"])], int(patch["level"]), [int(patch["size_x"]),int(patch["size_y"])])
         mask_region = mask.read_region([int(patch["x"]),int(patch["y"])], int(patch["level"]), [int(patch["size_x"]),int(patch["size_y"])])
-        return self.transforms(image=np.array(slide_region), mask=np.array(mask_region))
+        transformed = self.transforms(image=np.array(slide_region), mask=np.array(mask_region))
+        return transformed["image"], transformed["mask"]

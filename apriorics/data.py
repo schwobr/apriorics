@@ -8,10 +8,9 @@ import csv
 
 
 SLIDES_BACKEND = "cucim"
-DEFAULT_PATCH_SIZE = (1024,1024)
 
 class SegmentationDataset(Dataset):
-    def __init__(self, slide_paths:List[PathLike], mask_paths:List[PathLike], patches_paths:List[PathLike], patch_size:Tuple[int,int] = DEFAULT_PATCH_SIZE, transforms=None):
+    def __init__(self, slide_paths:List[PathLike], mask_paths:List[PathLike], patches_paths:List[PathLike], transforms=None):
         super().__init__()
         self.slides = [Slide(slide_path, backend=SLIDES_BACKEND) for slide_path in slide_paths]
         self.masks = [Slide(mask_path, backend=SLIDES_BACKEND) for mask_path in mask_paths]
@@ -23,7 +22,6 @@ class SegmentationDataset(Dataset):
                 for patch in reader :
                     self.patches.append(patch)
                     self.patches_slide.append(slide_idx)
-        self.patch_size = patch_size
         self.transforms = Compose(ifnone(transforms, []))
 
     def __len__(self):

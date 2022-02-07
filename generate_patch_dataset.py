@@ -32,7 +32,7 @@ if __name__ == "__main__":
         slide = Slide(in_file_path, backend="cucim")
         patches = slide_rois_no_image(slide, 0, psize=(patch_size, patch_size), slide_filters=[filter_thumbnail])
 
-        out_file_path = Path(output_folder)/in_file_path.relative_to(input_folder).with_suffix(.csv)
+        out_file_path = Path(output_folder)/in_file_path.relative_to(input_folder).with_suffix(".csv")
         with open(out_file_path, "w") as out_file:
             writer = csv.DictWriter(out_file, filed_names=Patch.get_fields())
             writer.writeheader()

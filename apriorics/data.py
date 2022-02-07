@@ -31,4 +31,6 @@ class SegmentationDataset(Dataset):
         patch = self.patches[idx]
         slide = self.slides[self.patches_slide[idx]]
         mask = self.masks[self.patches_slide[idx]]
-        return slide.read_region((patch["x"],patch["y"]), 0, self.patch_size), mask.read_region((patch["x"],patch["y"]), 0, self.patch_size)
+        slide_region = slide.read_region((patch["x"],patch["y"]), patch["level"], (patch["size_x"],patch["size_y"]))
+        mask_region = mask.read_region((patch["x"],patch["y"]), patch["level"], (patch["size_x"],patch["size_y"]))
+        return self.transforms(image=slide_region, mask=mask_region)

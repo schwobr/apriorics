@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
         out_file_path = Path(output_folder)/in_file_path.relative_to(input_folder).with_suffix(".csv")
         with open(out_file_path, "w") as out_file:
-            writer = csv.DictWriter(out_file, filed_names=Patch.get_fields())
+            writer = csv.DictWriter(out_file, fieldnames=Patch.get_fields())
             writer.writeheader()
             for patch in patches:
                 writer.writerow(patch.to_csv_row())

@@ -36,4 +36,4 @@ class SegmentationDataset(Dataset):
         slide_region = slide.read_region([int(patch["x"]),int(patch["y"])], int(patch["level"]), [int(patch["size_x"]),int(patch["size_y"])])
         mask_region = mask.read_region([int(patch["x"]),int(patch["y"])], int(patch["level"]), [int(patch["size_x"]),int(patch["size_y"])])
         transformed = self.transforms(image=np.array(slide_region), mask=np.array(mask_region))
-        return transformed["image"], transformed["mask"]
+        return np.moveaxis(transformed["image"], -1, 0), np.moveaxis(transformed["mask"], -1, 0)

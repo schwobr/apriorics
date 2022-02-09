@@ -38,10 +38,10 @@ class DropAlphaChanel (DualTransform):
     
     def apply(self, img: np.ndarray, **params):
         if self.trailing_chanels: 
-            assert(img.size(2) == 4)
+            assert(img.shape[2] == 4)
             return img[:,:,:-1]
         else:
-            assert(img.size(0) == 4)
+            assert(img.shape[0] == 4)
             return img[:-1]
 
 class ToTensor (DualTransform):

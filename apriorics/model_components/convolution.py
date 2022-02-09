@@ -2,7 +2,6 @@ from torch import nn
 import torch
 
 
-
 class ConvBnRelu(nn.Module):
     def __init__(
         self,
@@ -21,7 +20,7 @@ class ConvBnRelu(nn.Module):
             in_chans,
             out_channels,
             kernel_size,
-            stride=stride,
+            stride=(stride, stride),
             padding=padding,
             bias=bias,
             **kwargs
@@ -54,7 +53,7 @@ class ConvBn(nn.Module):
             in_chans,
             out_channels,
             kernel_size,
-            stride=stride,
+            stride=(stride, stride),
             padding=padding,
             bias=bias,
             **kwargs
@@ -83,7 +82,7 @@ class ConvRelu(nn.Module):
             in_chans,
             out_channels,
             kernel_size,
-            stride=stride,
+            stride=(stride, stride),
             padding=padding,
             bias=bias,
             **kwargs
@@ -176,7 +175,7 @@ class SelfAttentionBlock(nn.Module):
 
 class LastCross(nn.Module):
     def __init__(self, n_chans, bottle=False, norm_layer=nn.BatchNorm2d):
-        super(LastCross, self).__init__()
+        super().__init__()
         n_mid = n_chans // 2 if bottle else n_chans
         self.conv1 = ConvBnRelu(n_chans, n_mid, 3, padding=1, norm_layer=norm_layer)
         self.conv2 = ConvBnRelu(n_mid, n_chans, 3, padding=1, norm_layer=norm_layer)

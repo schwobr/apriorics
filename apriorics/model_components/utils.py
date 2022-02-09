@@ -1,8 +1,9 @@
 import numpy as np
 from pathaia.util.basic import ifnone
 import torch
+from torchmetrics import Metric
 from apriorics.model_components.hooks import Hooks
-from pytorch_lightning.metrics import Metric
+from torchmetrics import Metric
 
 def named_leaf_modules(model, name=""):
     named_children = list(model.named_children())

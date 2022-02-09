@@ -3,7 +3,8 @@ from typing import List, Tuple
 from cv2 import transform
 import numpy as np
 from torch.utils.data import Dataset
-from pathaia.util.types import Slide 
+from torchvision.transforms.functional import to_tensor
+from pathaia.util.types import Slide
 from pathaia.util.basic import ifnone
 from albumentations import Compose
 import csv
@@ -36,4 +37,6 @@ class SegmentationDataset(Dataset):
         slide_region = slide.read_region([int(patch["x"]),int(patch["y"])], int(patch["level"]), [int(patch["size_x"]),int(patch["size_y"])])
         mask_region = mask.read_region([int(patch["x"]),int(patch["y"])], int(patch["level"]), [int(patch["size_x"]),int(patch["size_y"])])
         transformed = self.transforms(image=np.array(slide_region), mask=np.array(mask_region))
-        return np.moveaxis(transformed["image"], -1, 0), np.moveaxis(transformed["mask"], -1, 0)
+        return to_tensor(transformed["image"])[:-1], to_tensor(transformed["mask"])[:-3]
+
+    

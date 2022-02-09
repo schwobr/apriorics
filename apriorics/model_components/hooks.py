@@ -1,4 +1,4 @@
-from pathaia.util.basic import is_listy
+from fastcore.utils import is_listy
 
 class Hook:
     "Create a hook on `m` with `hook_func`."

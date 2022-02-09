@@ -45,6 +45,7 @@ class CBR(nn.Module):
         self.fc = nn.Linear(out_c, n_classes)
 
     def forward(self, x):
+        print(x.shape)
         for m in self.children():
             x = m(x)
         return x

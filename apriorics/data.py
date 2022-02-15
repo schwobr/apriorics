@@ -1,10 +1,10 @@
 from os import PathLike
-from typing import Sequence
+from typing import Sequence, Optional
 import numpy as np
 from torch.utils.data import Dataset
 from pathaia.util.types import Slide, Patch
 from pathaia.util.basic import ifnone
-from albumentations import Compose
+from albumentations import Compose, BasicTransform
 import csv
 
 
@@ -14,8 +14,9 @@ class SegmentationDataset(Dataset):
         slide_paths: Sequence[PathLike],
         mask_paths: Sequence[PathLike],
         patches_paths: Sequence[PathLike],
-        transforms=None,
-        slide_backend="cucim",
+        stain_matrices_paths: Optional[Sequence[PathLike]] = None,
+        transforms: Optional[Sequence[BasicTransform]] = None,
+        slide_backend: str = "cucim",
     ):
         super().__init__()
         self.slides = []
@@ -34,6 +35,10 @@ class SegmentationDataset(Dataset):
                     self.patches.append(Patch.from_csv_row(patch))
                     self.slide_idxs.append(slide_idx)
 
+        if stain_matrices_paths is None:
+            self.stain_matrices = None
+        else:
+            self.stain_matrices = [np.load(path) for path in stain_matrices_paths]
         self.transforms = Compose(ifnone(transforms, []))
 
     def __len__(self):
@@ -43,12 +48,17 @@ class SegmentationDataset(Dataset):
         patch = self.patches[idx]
         slide = self.slides[self.slide_idxs[idx]]
         mask = self.masks[self.slide_idxs[idx]]
-        slide_region = slide.read_region(
-            patch.location, patch.level, patch.size
-        ).convert("RGB")
-        mask_region = mask.read_region(patch.location, patch.level, patch.size).convert(
-            "RGB"
+
+        slide_region = np.asarray(
+            slide.read_region(patch.location, patch.level, patch.size).convert("RGB")
         )
+        mask_region = np.asarray(
+            mask.read_region(patch.location, patch.level, patch.size).convert("RGB")
+        )
+
+        if self.stain_matrices is not None:
+            slide_region.stain_matrix = self.stain_matrices[self.slide_idxs[idx]]
+
         transformed = self.transforms(
             image=np.asarray(slide_region), mask=np.asarray(mask_region)
         )

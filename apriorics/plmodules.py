@@ -1,5 +1,5 @@
 import pytorch_lightning as pl
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Callable
 from torch import Tensor, nn
 from torch.optim import Optimizer, AdamW
 import torch
@@ -11,25 +11,31 @@ from pathaia.util.basic import ifnone
 from .model_components.utils import named_leaf_modules
 
 
-def get_scheduler(
-    opt: Optimizer, name: str, total_steps: int, lr: float
+def get_scheduler_func(
+    name: str, total_steps: int, lr: float
 ) -> torch.optim.lr_scheduler._LRScheduler:
-    if name == "one-cycle":
-        sched = {
-            "scheduler": OneCycleLR(opt, lr, total_steps=total_steps),
-            "interval": "step",
-        }
-    elif name == "cosine-anneal":
-        sched = {"scheduler": CosineAnnealingLR(opt, total_steps), "interval": "step"}
-    elif name == "reduce-on-plateau":
-        sched = {
-            "scheduler": ReduceLROnPlateau(opt, patience=3),
-            "interval": "epoch",
-            "monitor": "val_loss",
-        }
-    else:
-        return None
-    return sched
+    def scheduler_func(opt: Optimizer):
+        if name == "one-cycle":
+            sched = {
+                "scheduler": OneCycleLR(opt, lr, total_steps=total_steps),
+                "interval": "step",
+            }
+        elif name == "cosine-anneal":
+            sched = {
+                "scheduler": CosineAnnealingLR(opt, total_steps),
+                "interval": "step",
+            }
+        elif name == "reduce-on-plateau":
+            sched = {
+                "scheduler": ReduceLROnPlateau(opt, patience=3),
+                "interval": "epoch",
+                "monitor": "val_loss",
+            }
+        else:
+            return None
+        return sched
+
+    return scheduler_func
 
 
 class BasicSegmentationModule(pl.LightningModule):
@@ -39,7 +45,7 @@ class BasicSegmentationModule(pl.LightningModule):
         loss: nn.Module,
         lr: float,
         wd: float,
-        scheduler: Optional[Dict[str, Any]] = None,
+        scheduler_func: Optional[Callable] = None,
         metrics: Optional[Dict[str, Metric]] = None,
     ):
         super().__init__()
@@ -47,11 +53,11 @@ class BasicSegmentationModule(pl.LightningModule):
         self.loss = loss
         self.lr = lr
         self.wd = wd
-        self.scheduler = scheduler
+        self.scheduler_func = scheduler_func
         self.metrics = ifnone(metrics, [])
 
     def forward(self, x):
-        return self.model(x)
+        return torch.sigmoid(self.model(x)).squeeze(1)
 
     def training_step(self, batch, batch_idx) -> Tensor:
         x, y = batch
@@ -59,7 +65,8 @@ class BasicSegmentationModule(pl.LightningModule):
         loss = self.loss(y_hat, y)
 
         self.log("train_loss", loss)
-        self.log("learning_rate", self.sched["scheduler"].get_last_lr()[0])
+        if self.sched is not None:
+            self.log("learning_rate", self.sched["scheduler"].get_last_lr()[0])
         return loss
 
     def validation_step(self, batch, batch_idx, *args, **kwargs) -> Tensor:
@@ -78,10 +85,12 @@ class BasicSegmentationModule(pl.LightningModule):
 
     def configure_optimizers(self):
         self.opt = AdamW(self.parameters(), lr=self.lr, weight_decay=self.wd)
-        if self.scheduler is None:
+        if self.scheduler_func is None:
+            self.sched = None
             return self.opt
         else:
-            return {"optimizer": self.opt, "lr_scheduler": self.scheduler}
+            self.sched = self.scheduler_func(self.opt)
+            return {"optimizer": self.opt, "lr_scheduler": self.sched}
 
     def log_images(self, x, y, y_hat):
         sample_imgs = torch.cat((x, y.repeat(1, 3, 1, 1), y_hat.repeat(1, 3, 1, 1)), 0)

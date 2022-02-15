@@ -53,7 +53,7 @@ class SegmentationDataset(Dataset):
             slide.read_region(patch.location, patch.level, patch.size).convert("RGB")
         )
         mask_region = np.asarray(
-            mask.read_region(patch.location, patch.level, patch.size).convert("RGB")
+            mask.read_region(patch.location, patch.level, patch.size).convert("1")
         )
 
         if self.stain_matrices is not None:

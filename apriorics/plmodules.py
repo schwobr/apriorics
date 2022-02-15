@@ -8,6 +8,7 @@ from torchvision.utils import make_grid
 from torchvision.transforms.functional import to_pil_image
 from torchmetrics import Metric
 from pathaia.util.basic import ifnone
+from .model_components.utils import named_leaf_modules
 
 
 def get_scheduler(
@@ -29,20 +30,6 @@ def get_scheduler(
     else:
         return None
     return sched
-
-
-def named_leaf_modules(model, name=""):
-    named_children = list(model.named_children())
-    if named_children == []:
-        model.name = name
-        return [model]
-    else:
-        res = []
-        for n, m in named_children:
-            if not (isinstance(m, torch.jit.ScriptModule) or isinstance(m, Metric)):
-                pref = name + "." if name != "" else ""
-                res += named_leaf_modules(m, pref + n)
-        return res
 
 
 class BasicSegmentationModule(pl.LightningModule):

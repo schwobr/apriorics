@@ -1,9 +1,9 @@
 import numpy as np
 from pathaia.util.basic import ifnone
 import torch
-from torchmetrics import Metric
 from apriorics.model_components.hooks import Hooks
 from torchmetrics import Metric
+
 
 def named_leaf_modules(model, name=""):
     named_children = list(model.named_children())
@@ -25,7 +25,9 @@ def get_sizes(model, input_shape=(3, 224, 224), leaf_modules=None):
     class Count:
         def __init__(self):
             self.k = 0
+
     count = Count()
+
     def _hook(model, input, output):
         model.k = count.k
         count.k += 1

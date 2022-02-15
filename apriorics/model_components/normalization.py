@@ -9,10 +9,10 @@ class EstBN(nn.Module):
         self.num_features = num_features
         self.weight = nn.Parameter(torch.ones(num_features))
         self.bias = nn.Parameter(torch.zeros(num_features))
-        self.register_buffer('running_mean', torch.zeros(num_features))
-        self.register_buffer('running_var', torch.ones(num_features))
-        self.register_buffer('num_batches_tracked', torch.tensor(0, dtype=torch.long))
-        self.register_buffer('estbn_moving_speed', torch.zeros(1))
+        self.register_buffer("running_mean", torch.zeros(num_features))
+        self.register_buffer("running_var", torch.ones(num_features))
+        self.register_buffer("num_batches_tracked", torch.tensor(0, dtype=torch.long))
+        self.register_buffer("estbn_moving_speed", torch.zeros(1))
 
     def forward(self, inp):
         ms = self.estbn_moving_speed.item()
@@ -62,5 +62,5 @@ def group_norm(num_channels, eps=1e-5, affine=True):
 
 
 def bc_norm(num_channels, eps=1e-5, estimate=True):
-    n_groups = min(32, num_channels//4)
+    n_groups = min(32, num_channels // 4)
     return BCNorm(n_groups, num_channels, eps=eps, estimate=estimate)

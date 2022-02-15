@@ -1,13 +1,18 @@
 import numpy as np
 from torch import nn
 import torch
-from torch.nn.functional import interpolate 
+from torch.nn.functional import interpolate
 import timm
-from apriorics.model_components.convolution import ConvBnRelu, LastCross, SelfAttentionBlock
+from apriorics.model_components.convolution import (
+    ConvBnRelu,
+    LastCross,
+    SelfAttentionBlock,
+)
 from apriorics.model_components.decoder_blocks import DecoderBlock, PixelShuffleICNR
 from apriorics.model_components.hooks import Hooks
 from apriorics.model_components.normalization import bc_norm, group_norm
 from apriorics.model_components.utils import get_sizes
+
 
 class CBR(nn.Module):
     """"""
@@ -50,8 +55,11 @@ class CBR(nn.Module):
             x = m(x)
         return x
 
+
 class SASA(nn.Module):
-    def __init__(self, kernel_size, n_kernels, n_layers, n_groups, n_classes=2, in_chans=3):
+    def __init__(
+        self, kernel_size, n_kernels, n_layers, n_groups, n_classes=2, in_chans=3
+    ):
         super().__init__()
 
         self.stem = ConvBnRelu(
@@ -62,9 +70,7 @@ class SASA(nn.Module):
         for k in range(n_layers):
             self.add_module(
                 f"sasa_block_{k}",
-                SelfAttentionBlock(
-                    in_c, out_c, kernel_size, groups=n_groups
-                ),
+                SelfAttentionBlock(in_c, out_c, kernel_size, groups=n_groups),
             )
             self.add_module(f"pool_{k}", nn.AvgPool2d(2, stride=2))
             in_c = out_c
@@ -77,6 +83,7 @@ class SASA(nn.Module):
         for m in self.children():
             x = m(x)
         return x
+
 
 class DynamicUnet(nn.Module):
     """"""
@@ -168,7 +175,6 @@ class DynamicUnet(nn.Module):
             return output
 
         for k in idxs[::-1]:
-            out_shape = sizes[k]
             m = modules[k]
             if "downsample" not in m.name:
                 mods.append(m)
@@ -179,5 +185,3 @@ class DynamicUnet(nn.Module):
     def __del__(self):
         if hasattr(self, "hooks"):
             self.hooks.remove()
-
-

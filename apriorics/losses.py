@@ -1,27 +1,11 @@
 import torch
 import torch.nn as nn
-
-
-def _reduce(x, reduction="mean"):
-    if reduction == "mean":
-        return x.mean()
-    elif reduction == "sum":
-        return x.sum()
-    else:
-        return x
-
-
-def _flatten(x):
-    return x.view(x.shape[0], -1)
+from .metrics import _flatten, _reduce, dice_score
 
 
 def dice_loss(input, target, smooth=1, reduction="mean"):
-    target = _flatten(target).to(dtype=input.dtype)
-    input = _flatten(input)
-    inter = (target * input).sum(-1)
-    sum = target.sum(-1) + input.sum(-1)
-    dice = (inter + smooth) / (sum + smooth)
-    return _reduce(1 - dice, reduction=reduction)
+    dice = dice_score(input, target, smooth=1, reduction=reduction)
+    return 1 - dice
 
 
 def focal_loss(input, target, reduction="mean", beta=0.5, gamma=2.0, eps=1e-7):

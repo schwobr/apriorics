@@ -6,18 +6,19 @@ from torch.nn.functional import interpolate
 
 def icnr(x, scale=2, init=nn.init.kaiming_normal_):
     ni, nf, h, w = x.shape
-    ni2 = int(ni / (scale ** 2))
+    ni2 = int(ni / (scale**2))
     k = init(torch.zeros([ni2, nf, h, w])).transpose(0, 1)
     k = k.contiguous().view(ni2, nf, -1)
-    k = k.repeat(1, 1, scale ** 2)
+    k = k.repeat(1, 1, scale**2)
     k = k.contiguous().view([nf, ni, h, w]).transpose(0, 1)
     x.data.copy_(k)
+
 
 class PixelShuffleICNR(nn.Module):
     def __init__(self, in_chans, out_channels, bias=True, scale_factor=2, **kwargs):
         super().__init__()
         self.conv = nn.Conv2d(
-            in_chans, out_channels * scale_factor ** 2, 1, bias=bias, **kwargs
+            in_chans, out_channels * scale_factor**2, 1, bias=bias, **kwargs
         )
         icnr(self.conv.weight)
         self.shuf = nn.PixelShuffle(scale_factor)
@@ -32,6 +33,7 @@ class PixelShuffleICNR(nn.Module):
         # x = self.pad(x)
         # x = self.blur(x)
         return x
+
 
 class DecoderBlock(nn.Module):
     def __init__(

@@ -8,12 +8,11 @@ from pathaia.patches.functional_api import slide_rois_no_image
 from pathaia.patches import filter_thumbnail
 
 parser = ArgumentParser(prog="Generate the patch CSVs for slides")
-parser.add_argument("script_path", type=Path)
-parser.add_argument("input_folder", type=Path)
-parser.add_argument("target_folder", type=Path)
+parser.add_argument("--input-folder", type=Path)
+parser.add_argument("--target-folder", type=Path)
 parser.add_argument("--recursive", "-r", action="store_true")
 parser.add_argument("--patch-size", type=int, default=1024)
-parser.add_argument("--file-filter", type=str)
+parser.add_argument("--file-filter")
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -32,9 +31,12 @@ if __name__ == "__main__":
             slide, 0, psize=args.patch_size, slide_filters=[filter_thumbnail]
         )
 
-        out_file_path = args.output_folder / in_file_path.relative_to(
+        out_file_path = args.target_folder / in_file_path.relative_to(
             args.input_folder
         ).with_suffix(".csv")
+        if not out_file_path.parent.exists():
+            out_file_path.parent.mkdir(parents=True)
+
         with open(out_file_path, "w") as out_file:
             writer = csv.DictWriter(out_file, fieldnames=Patch.get_fields())
             writer.writeheader()

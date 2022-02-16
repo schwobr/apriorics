@@ -73,14 +73,18 @@ class BasicSegmentationModule(pl.LightningModule):
         x, y = batch
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        log_dict = {"val_loss": loss}
+        self.log("val_loss", loss)
 
         if batch_idx == 0:
             self.log_images(x, y, y_hat)
 
-        for metric_name, metric_func in self.metrics.items():
-            log_dict[metric_name] = metric_func(y_hat, y)
+        for metric_func in self.metrics.values():
+            metric_func(y_hat, y)
 
+    def validation_epoch_end(self, outputs) -> None:
+        log_dict = {}
+        for metric_name, metric_func in self.metrics.items():
+            log_dict[metric_name] = metric_func.compute(metric_name)
         self.log_dict(log_dict)
 
     def configure_optimizers(self):

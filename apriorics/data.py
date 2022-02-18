@@ -49,8 +49,9 @@ class SegmentationDataset(Dataset):
 
     def __getitem__(self, idx):
         patch = self.patches[idx]
-        slide = self.slides[self.slide_idxs[idx]]
-        mask = self.masks[self.slide_idxs[idx]]
+        slide_idx = self.slide_idxs[idx]
+        slide = self.slides[slide_idx]
+        mask = self.masks[slide_idx]
 
         slide_region = np.asarray(
             slide.read_region(patch.position, patch.level, patch.size).convert("RGB")
@@ -62,7 +63,7 @@ class SegmentationDataset(Dataset):
 
         if self.stain_augmentor is not None:
             if self.stain_matrices is not None:
-                stain_matrix = self.stain_matrices[self.slide_idxs[idx]]
+                stain_matrix = self.stain_matrices[slide_idx]
             else:
                 stain_matrix = None
             slide_region = self.stain_augmentor(image=(slide_region, stain_matrix))[

@@ -10,7 +10,7 @@ from apriorics.losses import get_loss
 from albumentations import RandomRotate90, Flip, Transpose, RandomBrightnessContrast
 from pathaia.util.paths import get_files
 import pandas as pd
-from torchmetrics import JaccardIndex
+from torchmetrics import JaccardIndex, AUROC, Precision, Recall, Specificity, Accuracy
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CometLogger
@@ -36,7 +36,8 @@ parser.add_argument("--loss", default="bce")
 parser.add_argument(
     "--scheduler", choices=["one-cycle", "cosine-anneal", "reduce-on-plateau"]
 )
-
+parser.add_argument("--grad-accumulation", type=int, default=1)
+parser.add_argument("--resume-version")
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -86,7 +87,7 @@ if __name__ == "__main__":
         shuffle=True,
         pin_memory=True,
         num_workers=args.num_workers,
-        drop_last=True
+        drop_last=True,
     )
     val_dl = DataLoader(
         val_ds,
@@ -108,7 +109,15 @@ if __name__ == "__main__":
         lr=args.lr,
         wd=args.wd,
         scheduler_func=scheduler_func,
-        metrics=[JaccardIndex(2), DiceScore()],
+        metrics=[
+            JaccardIndex(2),
+            DiceScore(),
+            Accuracy(),
+            Precision(),
+            Recall(),
+            Specificity(),
+            AUROC(),
+        ],
     )
 
     if args.freeze_encoder:
@@ -137,5 +146,20 @@ if __name__ == "__main__":
         max_epochs=args.epochs,
         logger=logger,
         precision=16,
+        accumulate_grad_batches=args.grad_accumulation,
+        callbacks=[ckpt_callback],
     )
-    trainer.fit(plmodule, train_dataloaders=train_dl, val_dataloaders=val_dl)
+
+    if args.resume_version is None:
+        ckpt_path = None
+    else:
+        ckpt_path = (
+            args.logfolder
+            / f"apriorics-ae1ae3/{args.resume_version}/checkpoints/last.ckpt"
+        )
+    trainer.fit(
+        plmodule,
+        train_dataloaders=train_dl,
+        val_dataloaders=val_dl,
+        ckpt_path=ckpt_path,
+    )

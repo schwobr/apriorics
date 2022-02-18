@@ -1,11 +1,14 @@
 from albumentations.core.transforms_interface import DualTransform, ImageOnlyTransform
 import numpy as np
 from pathaia.util.basic import ifnone
-from typing import Optional, Any, List, Dict
+from typing import Optional, Any, List, Tuple, Dict
 from nptyping import NDArray
 from numbers import Number
-from staintools.miscellaneous import get_concentrations
+from staintools.miscellaneous.optical_density_conversion import convert_RGB_to_OD
+import spams
 from staintools.stain_extraction.vahadane_stain_extractor import VahadaneStainExtractor
+from torchvision.transforms.functional import to_tensor
+import torch
 
 
 class ToSingleChannelMask(DualTransform):
@@ -50,6 +53,40 @@ class DropAlphaChannel(DualTransform):
         else:
             assert img.shape[0] == 4
             return img[:-1]
+
+
+class ToTensor(DualTransform):
+    def __init__(self, transpose_mask=False, always_apply=True, p=1):
+        super().__init__(always_apply=always_apply, p=p)
+        self.transpose_mask = transpose_mask
+
+    @property
+    def targets(self):
+        return {"image": self.apply, "mask": self.apply_to_mask}
+
+    def apply(self, img, **params):
+        return to_tensor(img)
+
+    def apply_to_mask(self, mask, **params):
+        if self.transpose_mask and mask.ndim == 3:
+            mask = mask.transpose(2, 0, 1)
+        return torch.from_numpy(mask)
+
+    def get_transform_init_args_names(self):
+        return ("transpose_mask",)
+
+
+def get_concentrations(img, stain_matrix, regularizer=0.01):
+    OD = convert_RGB_to_OD(img).reshape((-1, 3))
+    HE = spams.lasso(
+            X=OD.T,
+            D=stain_matrix.T,
+            mode=2,
+            lambda1=regularizer,
+            pos=True,
+            numThreads=1,
+        )
+    return HE.toarray().T
 
 
 class StainAugmentor(ImageOnlyTransform):
@@ -111,14 +148,16 @@ class StainAugmentor(ImageOnlyTransform):
 
     def apply(
         self,
-        image: NDArray[(Any, Any, 3), Number],
-        stain_matrix: Optional[NDArray[(2, 3), float]] = None,
+        image_and_stain: Tuple[
+            NDArray[(Any, Any, 3), Number], Optional[NDArray[(2, 3), float]]
+        ],
         alpha: Optional[NDArray[(2,), float]] = None,
         beta: Optional[NDArray[(2,), float]] = None,
         alpha_stain: Optional[NDArray[(2, 3), float]] = None,
         beta_stain: Optional[NDArray[(2, 3), float]] = None,
         **params
     ) -> NDArray[(Any, Any, 3), Number]:
+        image, stain_matrix = image_and_stain
         alpha, beta = self.initialize(alpha, beta, shape=2)
         alpha_stain, beta_stain = self.initialize(alpha_stain, beta_stain, shape=(2, 3))
         if stain_matrix is None:
@@ -143,13 +182,5 @@ class StainAugmentor(ImageOnlyTransform):
             "he_ratio",
         )
 
-    def targets_as_params(self) -> List[str]:
-        return ["image"]
-
-    def get_params_dependent_on_targets(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        img = params["image"]
-        try:
-            stain_matrix = img.stain_matrix
-        except AttributeError:
-            stain_matrix = VahadaneStainExtractor.get_stain_matrix(img)
-        return {"stain_matrix": stain_matrix}
+    def update_params(self, params: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+        return params

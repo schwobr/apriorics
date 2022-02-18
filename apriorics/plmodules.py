@@ -6,7 +6,7 @@ import torch
 from torch.optim.lr_scheduler import OneCycleLR, CosineAnnealingLR, ReduceLROnPlateau
 from torchvision.utils import make_grid
 from torchvision.transforms.functional import to_pil_image
-from torchmetrics import Metric
+from torchmetrics import Metric, MetricCollection
 from pathaia.util.basic import ifnone
 from .model_components.utils import named_leaf_modules
 
@@ -54,10 +54,10 @@ class BasicSegmentationModule(pl.LightningModule):
         self.lr = lr
         self.wd = wd
         self.scheduler_func = scheduler_func
-        self.metrics = ifnone(metrics, [])
+        self.metrics = MetricCollection(ifnone(metrics, []))
 
     def forward(self, x):
-        return torch.sigmoid(self.model(x)).squeeze(1)
+        return self.model(x).squeeze(1)
 
     def training_step(self, batch, batch_idx) -> Tensor:
         x, y = batch
@@ -75,17 +75,14 @@ class BasicSegmentationModule(pl.LightningModule):
         loss = self.loss(y_hat, y)
         self.log("val_loss", loss)
 
-        if batch_idx == 0:
-            self.log_images(x, y, y_hat)
+        y_hat = torch.sigmoid(y_hat)
+        if batch_idx % 100 == 0:
+            self.log_images(x, y, y_hat, batch_idx)
 
-        for metric_func in self.metrics.values():
-            metric_func(y_hat, y)
+        self.metrics(y_hat, y.int())
 
     def validation_epoch_end(self, outputs) -> None:
-        log_dict = {}
-        for metric_name, metric_func in self.metrics.items():
-            log_dict[metric_name] = metric_func.compute(metric_name)
-        self.log_dict(log_dict)
+        self.log_dict(self.metrics.compute())
 
     def configure_optimizers(self):
         self.opt = AdamW(self.parameters(), lr=self.lr, weight_decay=self.wd)
@@ -96,12 +93,14 @@ class BasicSegmentationModule(pl.LightningModule):
             self.sched = self.scheduler_func(self.opt)
             return {"optimizer": self.opt, "lr_scheduler": self.sched}
 
-    def log_images(self, x, y, y_hat):
-        sample_imgs = torch.cat((x, y.repeat(1, 3, 1, 1), y_hat.repeat(1, 3, 1, 1)), 0)
+    def log_images(self, x, y, y_hat, batch_idx):
+        y = y[:, None].repeat(1, 3, 1, 1)
+        y_hat = y_hat[:, None].repeat(1, 3, 1, 1)
+        sample_imgs = torch.cat((x, y, y_hat))
         grid = make_grid(sample_imgs, y.shape[0])
         self.logger.experiment.log_image(
             to_pil_image(grid),
-            "val_image_sample",
+            f"val_image_sample_{self.current_epoch}_{batch_idx}",
             step=self.current_epoch,
         )
 

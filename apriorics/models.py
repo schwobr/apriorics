@@ -119,14 +119,15 @@ class DynamicUnet(nn.Module):
         else:
             if encoder_name[:2] != "gn":
                 norm_layer = nn.BatchNorm2d
+            else:
                 encoder_name = encoder_name[2:]
             encoder = timm.create_model(
                 encoder_name,
                 pretrained=pretrained,
                 norm_layer=norm_layer,
-                pretrained_strict=False,
+                features_only=True,
             )
-            cut = -2
+            cut = None
 
         self.encoder = nn.Sequential(*(list(encoder.children())[:cut] + [nn.ReLU()]))
         encoder_sizes, idxs = self._register_output_hooks(input_shape=input_shape)

@@ -3,15 +3,16 @@ from pathlib import Path
 from torch.utils.data import DataLoader
 from apriorics.plmodules import get_scheduler_func, BasicSegmentationModule
 from apriorics.data import SegmentationDataset
-from apriorics.transforms import StainAugmentor
+from apriorics.transforms import StainAugmentor, ToTensor
 from apriorics.models import DynamicUnet
-from apriorics.losses import DiceLoss
+from apriorics.metrics import DiceScore
+from apriorics.losses import get_loss
 from albumentations import RandomRotate90, Flip, Transpose, RandomBrightnessContrast
-from albumentations.pytorch import ToTensorV2
 from pathaia.util.paths import get_files
 import pandas as pd
 from torchmetrics import JaccardIndex
 import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CometLogger
 import os
 
@@ -20,7 +21,7 @@ parser.add_argument("--encoder")
 parser.add_argument("--patch-csv-folder", type=Path)
 parser.add_argument("--slidefolder", type=Path)
 parser.add_argument("--maskfolder", type=Path)
-parser.add_argument("--stain-matrices-folder", typ=Path)
+parser.add_argument("--stain-matrices-folder", type=Path)
 parser.add_argument("--split-csv", type=Path)
 parser.add_argument("--logfolder", type=Path)
 parser.add_argument("--gpu", type=int)
@@ -31,6 +32,7 @@ parser.add_argument("--epochs", type=int, default=10)
 parser.add_argument("--patch-size", type=int, default=1024)
 parser.add_argument("--num-workers", type=int, default=0)
 parser.add_argument("--freeze-encoder", action="store_true")
+parser.add_argument("--loss", default="bce")
 parser.add_argument(
     "--scheduler", choices=["one-cycle", "cosine-anneal", "reduce-on-plateau"]
 )
@@ -57,26 +59,25 @@ if __name__ == "__main__":
     val_idxs = ~train_idxs
 
     transforms = [
-        StainAugmentor(),
         Flip(),
         Transpose(),
         RandomRotate90(),
         RandomBrightnessContrast(),
-        ToTensorV2(transpose_mask=True),
+        ToTensor(),
     ]
     train_ds = SegmentationDataset(
         slide_paths[train_idxs],
         mask_paths[train_idxs],
         patches_paths[train_idxs],
         stain_matrices_paths[train_idxs],
+        stain_augmentor=StainAugmentor(),
         transforms=transforms,
     )
     val_ds = SegmentationDataset(
         slide_paths[val_idxs],
         mask_paths[val_idxs],
         patches_paths[val_idxs],
-        stain_matrices_paths[val_idxs],
-        transforms=[ToTensorV2(transpose_mask=True)],
+        transforms=[ToTensor()],
     )
 
     train_dl = DataLoader(
@@ -85,6 +86,7 @@ if __name__ == "__main__":
         shuffle=True,
         pin_memory=True,
         num_workers=args.num_workers,
+        drop_last=True
     )
     val_dl = DataLoader(
         val_ds,
@@ -102,12 +104,15 @@ if __name__ == "__main__":
     )
     plmodule = BasicSegmentationModule(
         model,
-        loss=DiceLoss(),
+        loss=get_loss(args.loss),
         lr=args.lr,
         wd=args.wd,
         scheduler_func=scheduler_func,
-        metrics=[JaccardIndex(2)],
+        metrics=[JaccardIndex(2), DiceScore()],
     )
+
+    if args.freeze_encoder:
+        plmodule.freeze_encoder()
 
     logger = CometLogger(
         api_key=os.environ["COMET_API_KEY"],
@@ -115,6 +120,14 @@ if __name__ == "__main__":
         save_dir=args.logfolder,
         project_name="apriorics-ae1ae3",
         auto_metric_logging=False,
+    )
+
+    ckpt_callback = ModelCheckpoint(
+        save_top_k=3,
+        monitor="val_loss",
+        save_last=True,
+        mode="min",
+        filename="{epoch}-{val_loss:.3f}",
     )
 
     trainer = pl.Trainer(

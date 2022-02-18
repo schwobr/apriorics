@@ -3,8 +3,26 @@ import torch.nn as nn
 from .metrics import _flatten, _reduce, dice_score
 
 
+def get_loss(name: str):
+    split_name = name.split("_")
+    if split_name[0] == "bce":
+        return nn.BCEWithLogitsLoss()
+    elif split_name[0] == "focal":
+        return FocalLoss()
+    elif split_name[0] == "dice":
+        return DiceLoss()
+    elif split_name[0] == "sum":
+        names = split_name[1::2]
+        coefs = map(float, split_name[2::2])
+        losses_with_coefs = [(get_loss(n), c) for n, c in zip(names, coefs)]
+        return SumLosses(*losses_with_coefs)
+    else:
+        raise ValueError(f"{name} not recognized as a loss function")
+
+
 def dice_loss(input, target, smooth=1, reduction="mean"):
-    dice = dice_score(input, target, smooth=1, reduction=reduction)
+    input = torch.sigmoid(input)
+    dice = dice_score(input, target, smooth=smooth, reduction=reduction)
     return 1 - dice
 
 

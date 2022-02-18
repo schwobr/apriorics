@@ -1,4 +1,5 @@
 from torchmetrics import CatMetric
+import torch
 
 
 def _reduce(x, reduction="mean"):
@@ -20,7 +21,7 @@ def dice_score(input, target, smooth=1, reduction="mean"):
     inter = (target * input).sum(-1)
     sum = target.sum(-1) + input.sum(-1)
     dice = (inter + smooth) / (sum + smooth)
-    return _reduce(1 - dice, reduction=reduction)
+    return _reduce(dice, reduction=reduction)
 
 
 class DiceScore(CatMetric):
@@ -35,4 +36,5 @@ class DiceScore(CatMetric):
 
     def compute(self):
         dices = super().compute()
+        dices = torch.as_tensor(dices)
         return _reduce(dices, reduction=self.reduction)

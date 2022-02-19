@@ -155,7 +155,7 @@ if __name__ == "__main__":
             args.logfolder
             / f"apriorics-ae1ae3/{args.resume_version}/checkpoints/last.ckpt"
         )
-        checkpoint = torch.load(ckpt_path, map_location=plmodule.main_device)
+        checkpoint = torch.load(ckpt_path)
         missing, unexpected = plmodule.load_state_dict(
             checkpoint["state_dict"], strict=False
         )

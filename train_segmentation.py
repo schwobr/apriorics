@@ -10,7 +10,7 @@ from apriorics.losses import get_loss
 from albumentations import RandomRotate90, Flip, Transpose, RandomBrightnessContrast
 from pathaia.util.paths import get_files
 import pandas as pd
-from torchmetrics import JaccardIndex, AUROC, Precision, Recall, Specificity, Accuracy
+from torchmetrics import JaccardIndex, Precision, Recall, Specificity, Accuracy
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CometLogger
@@ -116,7 +116,6 @@ if __name__ == "__main__":
             Precision(),
             Recall(),
             Specificity(),
-            AUROC(),
         ],
     )
 

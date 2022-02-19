@@ -15,6 +15,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CometLogger
 import os
+import torch
 
 parser = ArgumentParser()
 parser.add_argument("--encoder")
@@ -149,16 +150,18 @@ if __name__ == "__main__":
         callbacks=[ckpt_callback],
     )
 
-    if args.resume_version is None:
-        ckpt_path = None
-    else:
+    if args.resume_version is not None:
         ckpt_path = (
             args.logfolder
             / f"apriorics-ae1ae3/{args.resume_version}/checkpoints/last.ckpt"
+        )
+        checkpoint = torch.load(ckpt_path, map_location=plmodule.main_device)
+        missing, unexpected = plmodule.load_state_dict(
+            checkpoint["state_dict"], strict=False
         )
     trainer.fit(
         plmodule,
         train_dataloaders=train_dl,
         val_dataloaders=val_dl,
-        ckpt_path=ckpt_path,
+        # ckpt_path=ckpt_path,
     )

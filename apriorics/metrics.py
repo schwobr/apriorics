@@ -20,7 +20,7 @@ def dice_score(input, target, smooth=1, reduction="mean"):
     input = _flatten(input)
     inter = (target * input).sum(-1)
     sum = target.sum(-1) + input.sum(-1)
-    dice = (inter + smooth) / (sum + smooth)
+    dice = 2 * (inter + smooth) / (sum + smooth)
     return _reduce(dice, reduction=reduction)
 
 

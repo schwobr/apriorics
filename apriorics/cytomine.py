@@ -1,4 +1,6 @@
+from os import PathLike
 from pathlib import Path
+from typing import List, Optional
 from cytomine import Cytomine
 from cytomine.models import (
     Annotation,
@@ -7,13 +9,25 @@ from cytomine.models import (
     TermCollection,
     ImageInstanceCollection,
     StorageCollection,
-    Project
+    Project,
 )
 from cytomine.models.collection import CollectionPartialUploadException
 import shapely
+from shapely.geometry import MultiPolygon
 
 
-def get_image_id(slidename, id_project):
+def get_image_id(slidename: str, id_project: int) -> int:
+    r"""
+    Fetch cytomine image id corresponding to a slide filename. Raises a RuntimeError if
+    image is not found.
+
+    Args:
+        slidename: annotated slide's filename.
+        id_project: cytomine project's id.
+
+    Returns:
+        Image id
+    """
     images = ImageInstanceCollection().fetch_with_filter("project", id_project)
     images = filter(lambda x: slidename in x.filename, images)
 
@@ -29,7 +43,17 @@ def get_image_id(slidename, id_project):
     return id_image
 
 
-def get_term_id(term, id_project):
+def get_term_id(term: str, id_project: int) -> int:
+    r"""
+    Fetch cytomine term id corresponding to a given term.
+
+    Args:
+        term: input term.
+        id_project: cytomine project's id.
+
+    Returns:
+        Term id, or `None` if not found.
+    """
     if term is not None:
         terms = TermCollection().fetch_with_filter("project", id_project)
         terms = filter(lambda x: x.name == term, terms)
@@ -49,8 +73,28 @@ def get_term_id(term, id_project):
 
 
 def polygons_to_annotations(
-    polygons, id_image, id_project, object_min_size=1000, polygon_type="polygon"
-):
+    polygons: MultiPolygon,
+    id_image: int,
+    id_project: int,
+    object_min_size: int = 1000,
+    polygon_type: str = "polygon",
+) -> AnnotationCollection:
+    r"""
+    Converts a shapely `MultiPolygon` object into a cytomine ready-to-upload
+    `AnnotationCollection` object. Can optionally filter small polygons or replace them
+    with their bounding box.
+
+    Args:
+        polygons: `MultiPolygon` object to upload.
+        id_image: cytomine id of the image to annotate.
+        id_project: cytomine project id.
+        object_min_size: minimum accepted area of a polygon.
+        polygon_type: if "polygon", upload polygons without changes; if "box", upload
+            their bounding boxes instead.
+
+    Returns:
+        The collection of cytomine annotations to upload.
+    """
     annotations = AnnotationCollection()
     for polygon in polygons:
         if polygon.area < object_min_size:
@@ -61,12 +105,30 @@ def polygons_to_annotations(
         else:
             location = polygon.wkt
         annotations.append(
-            Annotation(location=location, id_image=id_image, id_project=id_project,)
+            Annotation(
+                location=location,
+                id_image=id_image,
+                id_project=id_project,
+            )
         )
     return annotations
 
 
-def upload_annotations_with_terms(annotations, id_project, id_image, id_term=None):
+def upload_annotations_with_terms(
+    annotations: AnnotationCollection,
+    id_image: int,
+    id_project: int,
+    id_term: Optional[int] = None,
+):
+    r"""
+    Upload annotations to cytomine, optionally with given term.
+
+    Args:
+        annotations: collection of annotations to upload.
+        id_image: cytomine id of the image to annotate.
+        id_project: cytomine project id.
+        id_term: cytomine id of the term to use for annotation.
+    """
     try:
         annotations.save()
     except CollectionPartialUploadException as e:
@@ -82,16 +144,32 @@ def upload_annotations_with_terms(annotations, id_project, id_image, id_term=Non
 
 
 def upload_polygons_to_cytomine(
-    polygons,
-    slidename,
-    host,
-    public_key,
-    private_key,
-    id_project,
-    term=None,
-    polygon_type="polygon",
-    object_min_size=1000,
+    polygons: MultiPolygon,
+    slidename: str,
+    host: str,
+    public_key: str,
+    private_key: str,
+    id_project: int,
+    term: Optional[str] = None,
+    polygon_type: str = "polygon",
+    object_min_size: int = 1000,
 ):
+    r"""
+    Upload polygons to cytomine. Can optionally specify a term, filter small polygons or
+    upload bounding boxes instead.
+
+    Args:
+        polygons: `MultiPolygon` object to upload.
+        slidename: annotated slide's filename.
+        host: cytomine core ip address.
+        public_key: cytomine API public key.
+        private_key: cytomine API private key.
+        id_project: cytomine project id.
+        term: term to use for annotation.
+        polygon_type: if "polygon", upload polygons without changes; if "box", upload
+            their bounding boxes instead.
+        object_min_size: minimum accepted area of a polygon.
+    """
     with Cytomine(host=host, public_key=public_key, private_key=private_key) as _:
         id_image = get_image_id(slidename, id_project)
         id_term = get_term_id(term, id_project)
@@ -105,11 +183,23 @@ def upload_polygons_to_cytomine(
         )
 
         upload_annotations_with_terms(
-            annotations, id_project, id_image, id_term=id_term
+            annotations, id_image, id_project, id_term=id_term
         )
 
 
-def upload_image_to_cytomine(filepath, host, public_key, private_key, id_project):
+def upload_image_to_cytomine(
+    filepath: PathLike, host: str, public_key: str, private_key: str, id_project: str
+):
+    r"""
+    Upload an image to a given cytomine project.
+
+    Args:
+        filepath: path to image file.
+        host: cytomine core ip address.
+        public_key: cytomine API public key.
+        private_key: cytomine API private key.
+        id_project: cytomine project id.
+    """
     filepath = Path(filepath)
 
     with Cytomine(
@@ -146,7 +236,21 @@ def upload_image_to_cytomine(filepath, host, public_key, private_key, id_project
         print(uploaded_file)
 
 
-def get_uploaded_images(host, public_key, private_key, id_project):
+def get_uploaded_images(
+    host: str, public_key: str, private_key: str, id_project: int
+) -> List[str]:
+    r"""
+    Get a list of uploaded images on a given cytomine project.
+
+    Args:
+        host: cytomine core ip address.
+        public_key: cytomine API public key.
+        private_key: cytomine API private key.
+        id_project: cytomine project id.
+
+    Returns:
+        All uploaded images' filenames.
+    """
     with Cytomine(host=host, public_key=public_key, private_key=private_key) as _:
         images = ImageInstanceCollection().fetch_with_filter("project", id_project)
     return [image.instanceFilename for image in images]

@@ -115,7 +115,7 @@ def get_mask_AE1AE3(
 
 
 def get_mask_function(ihc_type: str) -> Callable:
-    """
+    r"""
     Get mask function corresponding to an immunohistochemistry type.
 
     Args:
@@ -133,7 +133,7 @@ def update_full_mask(
     x: int,
     y: int,
 ):
-    """
+    r"""
     Update a portion of a large mask using a smaller mask.
 
     Args:

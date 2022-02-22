@@ -1,9 +1,14 @@
 import pytorch_lightning as pl
-from typing import Optional, Dict, Callable
+from typing import Optional, Dict, Callable, Sequence, Tuple, Union
 from torch import Tensor, nn
 from torch.optim import Optimizer, AdamW
 import torch
-from torch.optim.lr_scheduler import OneCycleLR, CosineAnnealingLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import (
+    OneCycleLR,
+    CosineAnnealingLR,
+    ReduceLROnPlateau,
+    _LRScheduler,
+)
 from torchvision.utils import make_grid
 from torchvision.transforms.functional import to_pil_image
 from torchmetrics import Metric, MetricCollection
@@ -13,7 +18,23 @@ from .model_components.utils import named_leaf_modules
 
 def get_scheduler_func(
     name: str, total_steps: int, lr: float
-) -> torch.optim.lr_scheduler._LRScheduler:
+) -> Callable[[Optimizer], Optional[Dict[str, Union[str, _LRScheduler]]]]:
+    r"""
+    Get a function that given an optimizer, returns the corresponding scheduler dict
+    formatted for `PytorchLightning <https://www.pytorchlightning.ai/>`_.
+
+    Args:
+        name: name of the scheduler. Can either be "one-cycle", "cosine-anneal",
+            "reduce-on-plateau" or "none".
+        total_steps: total number of training iterations, only useful for "one-cycle" or
+            "cosine-anneal".
+        lr: baseline learning rate.
+
+    Returns:
+        Function that takes an optimizer as input and returns a scheduler dict formatted
+        for PytorchLightning.
+    """
+
     def scheduler_func(opt: Optimizer):
         if name == "one-cycle":
             sched = {
@@ -39,6 +60,20 @@ def get_scheduler_func(
 
 
 class BasicSegmentationModule(pl.LightningModule):
+    """
+    :class:`PytorchLightning.LightningModule` to use for binary semantic segmentation
+    tasks.
+
+    Args:
+        model: underlying PyTorch model.
+        loss: loss function.
+        lr: learning rate.
+        wd: weight decay for AdamW optimizer.
+        scheduler_func: Function that takes an optimizer as input and returns a
+            scheduler dict formatted for PytorchLightning.
+        metrics: list of :class:`torchmetrics.Metric` metrics to compute on validation.
+    """
+
     def __init__(
         self,
         model: nn.Module,
@@ -46,7 +81,7 @@ class BasicSegmentationModule(pl.LightningModule):
         lr: float,
         wd: float,
         scheduler_func: Optional[Callable] = None,
-        metrics: Optional[Dict[str, Metric]] = None,
+        metrics: Optional[Sequence[Metric]] = None,
     ):
         super().__init__()
         self.model = model
@@ -56,10 +91,10 @@ class BasicSegmentationModule(pl.LightningModule):
         self.scheduler_func = scheduler_func
         self.metrics = MetricCollection(ifnone(metrics, []))
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         return self.model(x).squeeze(1)
 
-    def training_step(self, batch, batch_idx) -> Tensor:
+    def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
         x, y = batch
         y_hat = self(x)
         loss = self.loss(y_hat, y)
@@ -69,7 +104,9 @@ class BasicSegmentationModule(pl.LightningModule):
             self.log("learning_rate", self.sched["scheduler"].get_last_lr()[0])
         return loss
 
-    def validation_step(self, batch, batch_idx, *args, **kwargs) -> Tensor:
+    def validation_step(
+        self, batch: Tuple[Tensor, Tensor], batch_idx: int, *args, **kwargs
+    ) -> Tensor:
         x, y = batch
         y_hat = self(x)
         loss = self.loss(y_hat, y)
@@ -81,10 +118,14 @@ class BasicSegmentationModule(pl.LightningModule):
 
         self.metrics(y_hat, y.int())
 
-    def validation_epoch_end(self, outputs) -> None:
+    def validation_epoch_end(self, outputs: Dict[str, Tensor]):
         self.log_dict(self.metrics.compute())
 
-    def configure_optimizers(self):
+    def configure_optimizers(
+        self,
+    ) -> Union[
+        Optimizer, Dict[str, Union[Optimizer, Dict[str, Union[str, _LRScheduler]]]]
+    ]:
         self.opt = AdamW(self.parameters(), lr=self.lr, weight_decay=self.wd)
         if self.scheduler_func is None:
             self.sched = None
@@ -93,7 +134,7 @@ class BasicSegmentationModule(pl.LightningModule):
             self.sched = self.scheduler_func(self.opt)
             return {"optimizer": self.opt, "lr_scheduler": self.sched}
 
-    def log_images(self, x, y, y_hat, batch_idx):
+    def log_images(self, x: Tensor, y: Tensor, y_hat: Tensor, batch_idx: int):
         y = y[:, None].repeat(1, 3, 1, 1)
         y_hat = y_hat[:, None].repeat(1, 3, 1, 1)
         sample_imgs = torch.cat((x, y, y_hat))

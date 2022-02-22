@@ -6,7 +6,6 @@ from pathaia.util.types import Slide, Coord
 from pathaia.util.paths import get_files
 from PIL import Image
 import numpy as np
-from cucim import CuImage
 from pathaia.util.types import Patch
 from shapely.affinity import translate
 from shapely.ops import unary_union
@@ -112,9 +111,9 @@ if __name__ == "__main__":
 
         print(hefile, ihcfile)
 
-        slide_he = CuImage(str(hefile))
-        slide_ihc = CuImage(str(ihcfile))
-        w, h = slide_he.size("XY")
+        slide_he = Slide(hefile)
+        slide_ihc = Slide(ihcfile)
+        w, h = slide_he.dimensions
 
         if args.box is not None:
             assert len(args.box) == 4

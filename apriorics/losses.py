@@ -33,6 +33,22 @@ def get_loss(name: str) -> nn.Module:
         raise ValueError(f"{name} not recognized as a loss function")
 
 
+def get_loss_name(loss: nn.Module) -> str:
+    if isinstance(loss, nn.BCEWithLogitsLoss):
+        return "bce"
+    elif isinstance(loss, FocalLoss):
+        return "focal"
+    elif isinstance(loss, DiceLoss):
+        return "dice"
+    elif isinstance(loss, SumLosses):
+        name = "sum"
+        for loss_func, coef in loss.losses_with_coef:
+            name += f"_{get_loss_name(loss_func)}_{coef}"
+        return name
+    else:
+        return loss.__class__.__name__
+
+
 def dice_loss(
     input: torch.Tensor,
     target: torch.Tensor,

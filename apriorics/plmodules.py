@@ -13,6 +13,8 @@ from torchvision.utils import make_grid
 from torchvision.transforms.functional import to_pil_image
 from torchmetrics import Metric, MetricCollection
 from pathaia.util.basic import ifnone
+
+from .losses import get_loss_name
 from .model_components.utils import named_leaf_modules
 
 
@@ -99,7 +101,7 @@ class BasicSegmentationModule(pl.LightningModule):
         y_hat = self(x)
         loss = self.loss(y_hat, y)
 
-        self.log("train_loss", loss)
+        self.log(f"train_loss_{get_loss_name(self.loss)}", loss)
         if self.sched is not None:
             self.log("learning_rate", self.sched["scheduler"].get_last_lr()[0])
         return loss
@@ -110,7 +112,7 @@ class BasicSegmentationModule(pl.LightningModule):
         x, y = batch
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        self.log("val_loss", loss)
+        self.log(f"val_loss_{get_loss_name(self.loss)}", loss)
 
         y_hat = torch.sigmoid(y_hat)
         if batch_idx % 100 == 0:

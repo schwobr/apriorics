@@ -3,7 +3,7 @@ from pathlib import Path
 from torch.utils.data import DataLoader
 from apriorics.plmodules import get_scheduler_func, BasicSegmentationModule
 from apriorics.data import SegmentationDataset
-from apriorics.transforms import StainAugmentor, ToTensor
+from apriorics.transforms import ToTensor  # , StainAugmentor
 from apriorics.models import DynamicUnet
 from apriorics.metrics import DiceScore
 from apriorics.losses import get_loss
@@ -71,8 +71,8 @@ if __name__ == "__main__":
         slide_paths[train_idxs],
         mask_paths[train_idxs],
         patches_paths[train_idxs],
-        stain_matrices_paths[train_idxs],
-        stain_augmentor=StainAugmentor(),
+        # stain_matrices_paths[train_idxs],
+        # stain_augmentor=StainAugmentor(),
         transforms=transforms,
     )
     val_ds = SegmentationDataset(

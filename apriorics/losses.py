@@ -1,7 +1,7 @@
 from typing import Tuple, Sequence
 import torch
 import torch.nn as nn
-from .metrics import _flatten, _reduce, dice_score
+from apriorics.metrics import _flatten, _reduce, dice_score
 
 
 def get_loss(name: str) -> nn.Module:

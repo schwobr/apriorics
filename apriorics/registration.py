@@ -15,7 +15,7 @@ from subprocess import run
 from pathlib import Path
 from skimage.io import imsave
 from pathaia.util.types import Coord
-from .masks import get_dab_mask, get_tissue_mask
+from apriorics.masks import get_dab_mask, get_tissue_mask
 from pathaia.util.types import Slide, NDBoolMask, Patch, NDByteGrayImage, NDByteImage
 from nptyping import NDArray
 from typing import Any, Callable, List, Sequence, Tuple, Union

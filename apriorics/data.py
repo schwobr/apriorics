@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 from pathaia.util.types import Slide, Patch
 from pathaia.util.basic import ifnone
 from albumentations import Compose, BasicTransform
-from .transforms import StainAugmentor
+from apriorics.transforms import StainAugmentor
 import csv
 
 

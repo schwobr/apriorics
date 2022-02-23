@@ -14,8 +14,8 @@ from torchvision.transforms.functional import to_pil_image
 from torchmetrics import Metric, MetricCollection
 from pathaia.util.basic import ifnone
 
-from .losses import get_loss_name
-from .model_components.utils import named_leaf_modules
+from apriorics.losses import get_loss_name
+from apriorics.model_components.utils import named_leaf_modules
 
 
 def get_scheduler_func(

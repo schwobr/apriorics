@@ -4,7 +4,6 @@ from torch.utils.data import DataLoader
 from apriorics.plmodules import get_scheduler_func, BasicSegmentationModule
 from apriorics.data import SegmentationDataset
 from apriorics.transforms import ToTensor  # , StainAugmentor
-from apriorics.models import DynamicUnet
 from apriorics.metrics import DiceScore
 from apriorics.losses import get_loss
 from albumentations import RandomRotate90, Flip, Transpose, RandomBrightnessContrast
@@ -16,9 +15,10 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CometLogger
 import os
 import torch
+from timm import create_model
 
 parser = ArgumentParser()
-parser.add_argument("--encoder")
+parser.add_argument("--model")
 parser.add_argument("--patch-csv-folder", type=Path)
 parser.add_argument("--slidefolder", type=Path)
 parser.add_argument("--maskfolder", type=Path)
@@ -101,9 +101,20 @@ if __name__ == "__main__":
     scheduler_func = get_scheduler_func(
         args.scheduler, total_steps=len(train_dl) * args.epochs, lr=args.lr
     )
-    model = DynamicUnet(
-        args.encoder, n_classes=1, input_shape=(3, args.patch_size, args.patch_size)
+
+    model = args.model.split("/")
+    if model[0] == "unet":
+        encoder_name = model[1]
+    else:
+        encoder_name = None
+    model = create_model(
+        model[0],
+        encoder_name=encoder_name,
+        pretrained=True,
+        img_size=args.patch_size,
+        num_classes=1,
     )
+
     plmodule = BasicSegmentationModule(
         model,
         loss=get_loss(args.loss),

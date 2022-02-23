@@ -9,9 +9,8 @@ def get_loss(name: str) -> nn.Module:
     Get loss object from its name. If name is not recognized, raises `ValueError`.
 
     Args:
-        Loss name: can either be "bce" for `BCEyWithLogitsLoss
-            <https://pytorch.org/docs/stable/generated/torch.nn.BCEWithLogitsLoss.html>`_,
-            "focal" for :class:`FocalLoss`, "dice" for :class:`DiceLoss` or
+        name: can either be "bce" for :class:`~torch.nn.BCEWithLogitsLoss`, "focal" for
+            :class:`FocalLoss`, "dice" for :class:`DiceLoss` or
             "sum_loss1_coef1_loss2_coef2_..._lossN_coefN" for :class:`SumLosses`.
 
     Returns:
@@ -34,6 +33,18 @@ def get_loss(name: str) -> nn.Module:
 
 
 def get_loss_name(loss: nn.Module) -> str:
+    r"""
+    Get a loss object's name. If object is not recognized, will return the class name.
+
+    Args:
+        loss: loss module.
+
+    Returns:
+        Either "bce" for :class:`~torch.nn.BCEWithLogitsLoss`, "focal" for
+            :class:`FocalLoss`, "dice" for :class:`DiceLoss`,
+            "sum_loss1_coef1_loss2_coef2_..._lossN_coefN" for :class:`SumLosses` or
+            the class name if none of the above.
+    """
     if isinstance(loss, nn.BCEWithLogitsLoss):
         return "bce"
     elif isinstance(loss, FocalLoss):

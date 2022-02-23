@@ -1,4 +1,4 @@
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 import numpy as np
 from torch import nn
 import torch
@@ -110,10 +110,12 @@ class DynamicUnet(nn.Module):
         img_size: int = 224,
         img_chan: int = 3,
         pretrained: bool = True,
+        norm_layer: Optional[nn.Module] = None,
         **kwargs
     ):
         super().__init__()
-        norm_layer = group_norm
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
         if "cbr" in encoder_name:
             args = map(int, encoder_name.split("_")[1:])
             encoder = CBR(*args, norm_layer=nn.BatchNorm2d)
@@ -138,10 +140,6 @@ class DynamicUnet(nn.Module):
             encoder = globals()[splits[0]](kernel_size)
             cut = -2
         else:
-            if encoder_name[:2] != "gn":
-                norm_layer = nn.BatchNorm2d
-            else:
-                encoder_name = encoder_name[2:]
             encoder = timm.create_model(
                 encoder_name,
                 pretrained=pretrained,
@@ -677,19 +675,19 @@ class MedTNet(nn.Module):
 
 
 @register_model
-def axialunet(pretrained=False, **kwargs):
+def axialunet(**kwargs):
     model = ResAxialAttentionUNet(AxialBlock, [1, 2, 4, 1], s=0.125, **kwargs)
     return model
 
 
 @register_model
-def gated(pretrained=False, **kwargs):
+def gated(**kwargs):
     model = ResAxialAttentionUNet(AxialBlock_dynamic, [1, 2, 4, 1], s=0.125, **kwargs)
     return model
 
 
 @register_model
-def med_t(pretrained=False, **kwargs):
+def med_t(**kwargs):
     model = MedTNet(
         AxialBlock_dynamic, AxialBlock_wopos, [1, 2, 4, 1], s=0.125, **kwargs
     )
@@ -697,7 +695,7 @@ def med_t(pretrained=False, **kwargs):
 
 
 @register_model
-def logo(pretrained=False, **kwargs):
+def logo(**kwargs):
     model = MedTNet(AxialBlock, AxialBlock, [1, 2, 4, 1], s=0.125, **kwargs)
     return model
 

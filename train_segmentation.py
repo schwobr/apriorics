@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from pathlib import Path
 from torch.utils.data import DataLoader
+from apriorics.model_components.normalization import group_norm
 from apriorics.plmodules import get_scheduler_func, BasicSegmentationModule
 from apriorics.data import SegmentationDataset
 from apriorics.transforms import ToTensor  # , StainAugmentor
@@ -34,6 +35,7 @@ parser.add_argument("--patch-size", type=int, default=1024)
 parser.add_argument("--num-workers", type=int, default=0)
 parser.add_argument("--freeze-encoder", action="store_true")
 parser.add_argument("--loss", default="bce")
+parser.add_argument("--group-norm", action="store_true")
 parser.add_argument(
     "--scheduler", choices=["one-cycle", "cosine-anneal", "reduce-on-plateau"]
 )
@@ -113,6 +115,7 @@ if __name__ == "__main__":
         pretrained=True,
         img_size=args.patch_size,
         num_classes=1,
+        norm_layer=group_norm if args.group_norm else torch.nn.BatchNorm2d
     )
 
     plmodule = BasicSegmentationModule(

@@ -56,8 +56,8 @@ class BCNorm(nn.Module):
 
 
 def group_norm(num_channels, eps=1e-5, affine=True):
-    # n_groups = min(32, num_channels//4)
-    n_groups = 32
+    n_groups = min(32, num_channels//4)
+    # n_groups = 32
     return nn.GroupNorm(n_groups, num_channels, eps=eps, affine=affine)
 
 

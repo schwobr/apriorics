@@ -9,7 +9,7 @@ from skimage.morphology import (
 )
 import numpy as np
 from pathaia.util.types import NDImage, NDByteGrayImage, NDBoolMask
-import PIL
+from Image import Image
 
 
 def get_tissue_mask(img_G: NDByteGrayImage, blacktol: int = 0, whitetol: int = 247):
@@ -83,7 +83,7 @@ def get_dab_mask(
 
 
 def get_mask_AE1AE3(
-    he: Union[PIL.Image, NDImage], ihc: Union[PIL.Image, NDImage]
+    he: Union[Image, NDImage], ihc: Union[Image, NDImage]
 ) -> NDBoolMask:
     r"""
     Compute mask on paired AE1AE3 immunohistochemistry and H&E images.

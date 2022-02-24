@@ -20,7 +20,6 @@ from apriorics.model_components.axialnet import (
     AxialBlock_wopos,
 )
 from nptyping import NDArray
-from timm.models.registry import register_model
 
 
 class CBR(nn.Module):
@@ -219,7 +218,6 @@ class ResAxialAttentionUNet(nn.Module):
         num_classes=2,
         groups=8,
         width_per_group=64,
-        replace_stride_with_dilation=None,
         norm_layer=None,
         s=0.125,
         img_size=128,
@@ -232,14 +230,6 @@ class ResAxialAttentionUNet(nn.Module):
         self._norm_layer = norm_layer
 
         self.inplanes = int(64 * s)
-        self.dilation = 1
-        if replace_stride_with_dilation is None:
-            replace_stride_with_dilation = [False, False, False]
-        if len(replace_stride_with_dilation) != 3:
-            raise ValueError(
-                "replace_stride_with_dilation should be None "
-                "or a 3-element tuple, got {}".format(replace_stride_with_dilation)
-            )
         self.groups = groups
         self.base_width = width_per_group
         self.conv1 = nn.Conv2d(
@@ -265,7 +255,6 @@ class ResAxialAttentionUNet(nn.Module):
             layers[1],
             stride=2,
             kernel_size=(img_size // 2),
-            dilate=replace_stride_with_dilation[0],
         )
         self.layer3 = self._make_layer(
             block,
@@ -273,7 +262,6 @@ class ResAxialAttentionUNet(nn.Module):
             layers[2],
             stride=2,
             kernel_size=(img_size // 4),
-            dilate=replace_stride_with_dilation[1],
         )
         self.layer4 = self._make_layer(
             block,
@@ -281,7 +269,6 @@ class ResAxialAttentionUNet(nn.Module):
             layers[3],
             stride=2,
             kernel_size=(img_size // 8),
-            dilate=replace_stride_with_dilation[2],
         )
 
         # Decoder
@@ -306,14 +293,10 @@ class ResAxialAttentionUNet(nn.Module):
         self.soft = nn.Softmax(dim=1)
 
     def _make_layer(
-        self, block, planes, blocks, kernel_size=56, stride=1, dilate=False
+        self, block, planes, blocks, kernel_size=56, stride=1
     ):
         norm_layer = self._norm_layer
         downsample = None
-        previous_dilation = self.dilation
-        if dilate:
-            self.dilation *= stride
-            stride = 1
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
@@ -329,7 +312,6 @@ class ResAxialAttentionUNet(nn.Module):
                 downsample,
                 groups=self.groups,
                 base_width=self.base_width,
-                dilation=previous_dilation,
                 norm_layer=norm_layer,
                 kernel_size=kernel_size,
             )
@@ -345,7 +327,6 @@ class ResAxialAttentionUNet(nn.Module):
                     planes,
                     groups=self.groups,
                     base_width=self.base_width,
-                    dilation=self.dilation,
                     norm_layer=norm_layer,
                     kernel_size=kernel_size,
                 )
@@ -373,23 +354,23 @@ class ResAxialAttentionUNet(nn.Module):
         x4 = self.layer4(x3)
 
         x = F.relu(
-            F.F.interpolate(self.decoder1(x4), scale_factor=(2, 2), mode="bilinear")
+            F.interpolate(self.decoder1(x4), scale_factor=(2, 2), mode="bilinear")
         )
         x = torch.add(x, x4)
         x = F.relu(
-            F.F.interpolate(self.decoder2(x), scale_factor=(2, 2), mode="bilinear")
+            F.interpolate(self.decoder2(x), scale_factor=(2, 2), mode="bilinear")
         )
         x = torch.add(x, x3)
         x = F.relu(
-            F.F.interpolate(self.decoder3(x), scale_factor=(2, 2), mode="bilinear")
+            F.interpolate(self.decoder3(x), scale_factor=(2, 2), mode="bilinear")
         )
         x = torch.add(x, x2)
         x = F.relu(
-            F.F.interpolate(self.decoder4(x), scale_factor=(2, 2), mode="bilinear")
+            F.interpolate(self.decoder4(x), scale_factor=(2, 2), mode="bilinear")
         )
         x = torch.add(x, x1)
         x = F.relu(
-            F.F.interpolate(self.decoder5(x), scale_factor=(2, 2), mode="bilinear")
+            F.interpolate(self.decoder5(x), scale_factor=(2, 2), mode="bilinear")
         )
         x = self.adjust(F.relu(x))
         return x
@@ -407,7 +388,6 @@ class MedTNet(nn.Module):
         num_classes=2,
         groups=8,
         width_per_group=64,
-        replace_stride_with_dilation=None,
         norm_layer=None,
         s=0.125,
         img_size=128,
@@ -420,14 +400,6 @@ class MedTNet(nn.Module):
         self._norm_layer = norm_layer
 
         self.inplanes = int(64 * s)
-        self.dilation = 1
-        if replace_stride_with_dilation is None:
-            replace_stride_with_dilation = [False, False, False]
-        if len(replace_stride_with_dilation) != 3:
-            raise ValueError(
-                "replace_stride_with_dilation should be None "
-                "or a 3-element tuple, got {}".format(replace_stride_with_dilation)
-            )
         self.groups = groups
         self.base_width = width_per_group
         self.conv1 = nn.Conv2d(
@@ -454,7 +426,6 @@ class MedTNet(nn.Module):
             layers[1],
             stride=2,
             kernel_size=(img_size // 2),
-            dilate=replace_stride_with_dilation[0],
         )
 
         self.decoder4 = nn.Conv2d(
@@ -494,24 +465,21 @@ class MedTNet(nn.Module):
             int(256 * s),
             layers[1],
             stride=2,
-            kernel_size=(img_size_p // 2),
-            dilate=replace_stride_with_dilation[0],
+            kernel_size=(img_size_p // 2)
         )
         self.layer3_p = self._make_layer(
             block_2,
             int(512 * s),
             layers[2],
             stride=2,
-            kernel_size=(img_size_p // 4),
-            dilate=replace_stride_with_dilation[1],
+            kernel_size=(img_size_p // 4)
         )
         self.layer4_p = self._make_layer(
             block_2,
             int(1024 * s),
             layers[3],
             stride=2,
-            kernel_size=(img_size_p // 8),
-            dilate=replace_stride_with_dilation[2],
+            kernel_size=(img_size_p // 8)
         )
 
         # Decoder
@@ -540,14 +508,10 @@ class MedTNet(nn.Module):
         self.soft_p = nn.Softmax(dim=1)
 
     def _make_layer(
-        self, block, planes, blocks, kernel_size=56, stride=1, dilate=False
+        self, block, planes, blocks, kernel_size=56, stride=1
     ):
         norm_layer = self._norm_layer
         downsample = None
-        previous_dilation = self.dilation
-        if dilate:
-            self.dilation *= stride
-            stride = 1
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
@@ -563,7 +527,6 @@ class MedTNet(nn.Module):
                 downsample,
                 groups=self.groups,
                 base_width=self.base_width,
-                dilation=previous_dilation,
                 norm_layer=norm_layer,
                 kernel_size=kernel_size,
             )
@@ -579,7 +542,6 @@ class MedTNet(nn.Module):
                     planes,
                     groups=self.groups,
                     base_width=self.base_width,
-                    dilation=self.dilation,
                     norm_layer=norm_layer,
                     kernel_size=kernel_size,
                 )
@@ -604,11 +566,11 @@ class MedTNet(nn.Module):
         x2 = self.layer2(x1)
 
         x = F.relu(
-            F.F.interpolate(self.decoder4(x2), scale_factor=(2, 2), mode="bilinear")
+            F.interpolate(self.decoder4(x2), scale_factor=(2, 2), mode="bilinear")
         )
         x = torch.add(x, x1)
         x = F.relu(
-            F.F.interpolate(self.decoder5(x), scale_factor=(2, 2), mode="bilinear")
+            F.interpolate(self.decoder5(x), scale_factor=(2, 2), mode="bilinear")
         )
         x_loc = x.clone()
 
@@ -633,31 +595,31 @@ class MedTNet(nn.Module):
                 x4_p = self.layer4_p(x3_p)
 
                 x_p = F.relu(
-                    F.F.interpolate(
+                    F.interpolate(
                         self.decoder1_p(x4_p), scale_factor=(2, 2), mode="bilinear"
                     )
                 )
                 x_p = torch.add(x_p, x4_p)
                 x_p = F.relu(
-                    F.F.interpolate(
+                    F.interpolate(
                         self.decoder2_p(x_p), scale_factor=(2, 2), mode="bilinear"
                     )
                 )
                 x_p = torch.add(x_p, x3_p)
                 x_p = F.relu(
-                    F.F.interpolate(
+                    F.interpolate(
                         self.decoder3_p(x_p), scale_factor=(2, 2), mode="bilinear"
                     )
                 )
                 x_p = torch.add(x_p, x2_p)
                 x_p = F.relu(
-                    F.F.interpolate(
+                    F.interpolate(
                         self.decoder4_p(x_p), scale_factor=(2, 2), mode="bilinear"
                     )
                 )
                 x_p = torch.add(x_p, x1_p)
                 x_p = F.relu(
-                    F.F.interpolate(
+                    F.interpolate(
                         self.decoder5_p(x_p), scale_factor=(2, 2), mode="bilinear"
                     )
                 )
@@ -674,19 +636,16 @@ class MedTNet(nn.Module):
         return self._forward_impl(x)
 
 
-@register_model
 def axialunet(**kwargs):
     model = ResAxialAttentionUNet(AxialBlock, [1, 2, 4, 1], s=0.125, **kwargs)
     return model
 
 
-@register_model
 def gated(**kwargs):
     model = ResAxialAttentionUNet(AxialBlock_dynamic, [1, 2, 4, 1], s=0.125, **kwargs)
     return model
 
 
-@register_model
 def med_t(**kwargs):
     model = MedTNet(
         AxialBlock_dynamic, AxialBlock_wopos, [1, 2, 4, 1], s=0.125, **kwargs
@@ -694,13 +653,11 @@ def med_t(**kwargs):
     return model
 
 
-@register_model
 def logo(**kwargs):
     model = MedTNet(AxialBlock, AxialBlock, [1, 2, 4, 1], s=0.125, **kwargs)
     return model
 
 
-@register_model
 def unet(pretrained=True, encoder_name="cbr_5_32_4", **kwargs):
     model = DynamicUnet(encoder_name, pretrained=pretrained, **kwargs)
     return model

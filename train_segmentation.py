@@ -147,7 +147,7 @@ if __name__ == "__main__":
 
     ckpt_callback = ModelCheckpoint(
         save_top_k=3,
-        monitor="val_loss",
+        monitor=f"val_loss_{args.loss}",
         save_last=True,
         mode="min",
         filename="{epoch}-{val_loss:.3f}",

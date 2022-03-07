@@ -96,7 +96,7 @@ def polygons_to_annotations(
         The collection of cytomine annotations to upload.
     """
     annotations = AnnotationCollection()
-    for polygon in polygons:
+    for polygon in polygons.geoms:
         if polygon.area < object_min_size:
             continue
         if polygon_type == "box":

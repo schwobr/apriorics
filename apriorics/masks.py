@@ -9,7 +9,7 @@ from skimage.morphology import (
 )
 import numpy as np
 from pathaia.util.types import NDImage, NDByteGrayImage, NDBoolMask
-from Image import Image
+from PIL.Image import Image
 
 
 def get_tissue_mask(img_G: NDByteGrayImage, blacktol: int = 0, whitetol: int = 247):

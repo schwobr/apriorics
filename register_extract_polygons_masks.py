@@ -42,7 +42,7 @@ parser.add_argument(
     "--term", help="term for the annotations. Must be defined in a cytomine ontology."
 )
 parser.add_argument("--polygon-type", default="polygon", choices=["polygon", "box"])
-parser.add_argument("--dab-thr", type=float, default=0.085)
+parser.add_argument("--dab-thr", type=float, default=0.03)
 parser.add_argument("--object-min-size", type=int, default=1000)
 parser.add_argument(
     "--binary-op", default="closing", choices=["None", "closing", "dilation"]
@@ -106,13 +106,13 @@ if __name__ == "__main__":
     ihcfiles.sort(key=lambda x: x.stem.split("-")[0])
 
     for hefile, ihcfile in zip(hefiles, ihcfiles):
-        if (args.maskfolder / f"{hefile.stem}.tif").exists():
-            continue
+        """if (args.maskfolder / f"{hefile.stem}.tif").exists():
+            continue"""
 
         print(hefile, ihcfile)
 
-        slide_he = Slide(hefile)
-        slide_ihc = Slide(ihcfile)
+        slide_he = Slide(hefile, backend="cucim")
+        slide_ihc = Slide(ihcfile, backend="cucim")
         w, h = slide_he.dimensions
 
         if args.box is not None:
@@ -133,7 +133,7 @@ if __name__ == "__main__":
         full_mask = np.zeros((h, w), dtype=bool)
 
         for patch_he in slide_rois_no_image(
-            Slide(hefile),
+            Slide(hefile, backend="cucim"),
             0,
             (args.psize, args.psize),
             (interval, interval),

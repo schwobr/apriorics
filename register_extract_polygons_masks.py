@@ -6,7 +6,6 @@ from pathaia.util.types import Slide, Coord
 from pathaia.util.paths import get_files
 from PIL import Image
 import numpy as np
-from cucim import CuImage
 from pathaia.util.types import Patch
 from shapely.affinity import translate
 from shapely.ops import unary_union
@@ -43,7 +42,7 @@ parser.add_argument(
     "--term", help="term for the annotations. Must be defined in a cytomine ontology."
 )
 parser.add_argument("--polygon-type", default="polygon", choices=["polygon", "box"])
-parser.add_argument("--dab-thr", type=float, default=0.085)
+parser.add_argument("--dab-thr", type=float, default=0.03)
 parser.add_argument("--object-min-size", type=int, default=1000)
 parser.add_argument(
     "--binary-op", default="closing", choices=["None", "closing", "dilation"]
@@ -107,14 +106,17 @@ if __name__ == "__main__":
     ihcfiles.sort(key=lambda x: x.stem.split("-")[0])
 
     for hefile, ihcfile in zip(hefiles, ihcfiles):
-        if (args.maskfolder / f"{hefile.stem}.tif").exists():
+        """if (args.maskfolder / f"{hefile.stem}.tif").exists():
+            continue"""
+
+        if hefile.stem == "21I000004-1-03-1_135435":
             continue
 
         print(hefile, ihcfile)
 
-        slide_he = CuImage(str(hefile))
-        slide_ihc = CuImage(str(ihcfile))
-        w, h = slide_he.size("XY")
+        slide_he = Slide(hefile, backend="cucim")
+        slide_ihc = Slide(ihcfile, backend="cucim")
+        w, h = slide_he.dimensions
 
         if args.box is not None:
             assert len(args.box) == 4
@@ -134,7 +136,7 @@ if __name__ == "__main__":
         full_mask = np.zeros((h, w), dtype=bool)
 
         for patch_he in slide_rois_no_image(
-            Slide(hefile),
+            Slide(hefile, backend="cucim"),
             0,
             (args.psize, args.psize),
             (interval, interval),
@@ -217,7 +219,7 @@ if __name__ == "__main__":
         Image.fromarray(full_mask).save(maskpath)
         vips_cmd = (
             f"vips tiffsave {maskpath} {maskpath.with_suffix('.tif')} "
-            "--compression jpeg --tile-width 1024 --tile-height 1024 --tile "
+            "--compression jpeg --tile-width 256 --tile-height 256 --tile "
             "--pyramid"
         )
 

@@ -1,15 +1,37 @@
 from os import PathLike
-from typing import Sequence, Optional
+from typing import Sequence, Optional, Tuple, Union
 import numpy as np
+import torch
 from torch.utils.data import Dataset
 from pathaia.util.types import Slide, Patch
 from pathaia.util.basic import ifnone
 from albumentations import Compose, BasicTransform
-from .transforms import StainAugmentor
+from apriorics.transforms import StainAugmentor
 import csv
 
 
 class SegmentationDataset(Dataset):
+    r"""
+    PyTorch dataset for slide segmentation tasks.
+
+    Args:
+        slide_paths: list of slides' filepaths.
+        mask_paths: list of masks' filepaths. Masks are supposed to be tiled pyramidal
+            images.
+        patches_paths: list of patch csvs' filepaths. Files must be formatted according
+            to `PathAIA API <https://github.com/MicroMedIAn/PathAIA>`_.
+        stain_matrices_paths: path to stain matrices .npy files. Each file must contain
+            a (2, 3) matrice to use for stain separation. If not sppecified while
+            `stain_augmentor` is, stain matrices will be computed at runtime (can cause
+            a bottleneckd uring training).
+        stain_augmentor: :class:`~apriorics.transforms.StainAugmentor` object to use for
+            stain augmentation.
+        transforms: list of `albumentation <https://albumentations.ai/>`_ transforms to
+            use on images (and on masks when relevant).
+        slide_backend: whether to use `OpenSlide <https://openslide.org/>`_ or
+            `cuCIM <https://github.com/rapidsai/cucim>`_ to load slides.
+    """
+
     def __init__(
         self,
         slide_paths: Sequence[PathLike],
@@ -47,7 +69,9 @@ class SegmentationDataset(Dataset):
     def __len__(self):
         return len(self.patches)
 
-    def __getitem__(self, idx):
+    def __getitem__(
+        self, idx: int
+    ) -> Tuple[Union[np.ndarray, torch.Tensor], Union[np.ndarray, torch.Tensor]]:
         patch = self.patches[idx]
         slide_idx = self.slide_idxs[idx]
         slide = self.slides[slide_idx]

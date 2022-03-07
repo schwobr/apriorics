@@ -1,10 +1,10 @@
 from argparse import ArgumentParser
 from pathlib import Path
 from torch.utils.data import DataLoader
+from apriorics.model_components.normalization import group_norm
 from apriorics.plmodules import get_scheduler_func, BasicSegmentationModule
 from apriorics.data import SegmentationDataset
-from apriorics.transforms import StainAugmentor, ToTensor
-from apriorics.models import DynamicUnet
+from apriorics.transforms import ToTensor  # , StainAugmentor
 from apriorics.metrics import DiceScore
 from apriorics.losses import get_loss
 from albumentations import RandomRotate90, Flip, Transpose, RandomBrightnessContrast
@@ -16,9 +16,10 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CometLogger
 import os
 import torch
+from timm import create_model
 
 parser = ArgumentParser()
-parser.add_argument("--encoder")
+parser.add_argument("--model")
 parser.add_argument("--patch-csv-folder", type=Path)
 parser.add_argument("--slidefolder", type=Path)
 parser.add_argument("--maskfolder", type=Path)
@@ -34,6 +35,7 @@ parser.add_argument("--patch-size", type=int, default=1024)
 parser.add_argument("--num-workers", type=int, default=0)
 parser.add_argument("--freeze-encoder", action="store_true")
 parser.add_argument("--loss", default="bce")
+parser.add_argument("--group-norm", action="store_true")
 parser.add_argument(
     "--scheduler", choices=["one-cycle", "cosine-anneal", "reduce-on-plateau"]
 )
@@ -71,8 +73,8 @@ if __name__ == "__main__":
         slide_paths[train_idxs],
         mask_paths[train_idxs],
         patches_paths[train_idxs],
-        stain_matrices_paths[train_idxs],
-        stain_augmentor=StainAugmentor(),
+        # stain_matrices_paths[train_idxs],
+        # stain_augmentor=StainAugmentor(),
         transforms=transforms,
     )
     val_ds = SegmentationDataset(
@@ -101,9 +103,21 @@ if __name__ == "__main__":
     scheduler_func = get_scheduler_func(
         args.scheduler, total_steps=len(train_dl) * args.epochs, lr=args.lr
     )
-    model = DynamicUnet(
-        args.encoder, n_classes=1, input_shape=(3, args.patch_size, args.patch_size)
+
+    model = args.model.split("/")
+    if model[0] == "unet":
+        encoder_name = model[1]
+    else:
+        encoder_name = None
+    model = create_model(
+        model[0],
+        encoder_name=encoder_name,
+        pretrained=True,
+        img_size=args.patch_size,
+        num_classes=1,
+        norm_layer=group_norm if args.group_norm else torch.nn.BatchNorm2d
     )
+
     plmodule = BasicSegmentationModule(
         model,
         loss=get_loss(args.loss),
@@ -133,7 +147,7 @@ if __name__ == "__main__":
 
     ckpt_callback = ModelCheckpoint(
         save_top_k=3,
-        monitor="val_loss",
+        monitor=f"val_loss_{args.loss}",
         save_last=True,
         mode="min",
         filename="{epoch}-{val_loss:.3f}",

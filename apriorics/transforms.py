@@ -1,7 +1,7 @@
 from albumentations.core.transforms_interface import DualTransform, ImageOnlyTransform
 import numpy as np
 from pathaia.util.basic import ifnone
-from typing import Optional, Any, List, Tuple, Dict
+from typing import Callable, Optional, Any, List, Tuple, Dict
 from nptyping import NDArray
 from numbers import Number
 from staintools.miscellaneous.optical_density_conversion import convert_RGB_to_OD
@@ -9,6 +9,7 @@ import spams
 from staintools.stain_extraction.vahadane_stain_extractor import VahadaneStainExtractor
 from torchvision.transforms.functional import to_tensor
 import torch
+from pathaia.util.types import NDImage, NDGrayImage, NDByteImage
 
 
 class ToSingleChannelMask(DualTransform):
@@ -24,10 +25,10 @@ class ToSingleChannelMask(DualTransform):
         super().__init__(True, 1)
         self.trailing_channels = trailing_channels
 
-    def apply(self, img: np.ndarray, **params) -> np.ndarray:
+    def apply(self, img: NDImage, **params) -> NDImage:
         return img
 
-    def apply_to_mask(self, img: np.ndarray, **params):
+    def apply_to_mask(self, img: NDImage, **params) -> NDGrayImage:
         if self.trailing_channels:
             return img[:, :, 0]
         else:
@@ -46,7 +47,7 @@ class DropAlphaChannel(DualTransform):
         super().__init__(True, 1)
         self.trailing_channels = trailing_channels
 
-    def apply(self, img: np.ndarray, **params):
+    def apply(self, img: NDImage, **params) -> NDImage:
         if self.trailing_channels:
             assert img.shape[2] == 4
             return img[:, :, :-1]
@@ -56,36 +57,40 @@ class DropAlphaChannel(DualTransform):
 
 
 class ToTensor(DualTransform):
-    def __init__(self, transpose_mask=False, always_apply=True, p=1):
+    def __init__(
+        self, transpose_mask: bool = False, always_apply: bool = True, p: float = 1
+    ):
         super().__init__(always_apply=always_apply, p=p)
         self.transpose_mask = transpose_mask
 
     @property
-    def targets(self):
+    def targets(self) -> Dict[str, Callable[[NDImage], torch.Tensor]]:
         return {"image": self.apply, "mask": self.apply_to_mask}
 
-    def apply(self, img, **params):
+    def apply(self, img: NDImage, **params) -> torch.Tensor:
         return to_tensor(img)
 
-    def apply_to_mask(self, mask, **params):
+    def apply_to_mask(self, mask: NDImage, **params) -> torch.Tensor:
         if self.transpose_mask and mask.ndim == 3:
             mask = mask.transpose(2, 0, 1)
         return torch.from_numpy(mask)
 
-    def get_transform_init_args_names(self):
+    def get_transform_init_args_names(self) -> Tuple[str]:
         return ("transpose_mask",)
 
 
-def get_concentrations(img, stain_matrix, regularizer=0.01):
+def get_concentrations(
+    img: NDByteImage, stain_matrix: NDArray[(2, 3), float], regularizer: float = 0.01
+) -> NDArray[(Any, Any, 2), float]:
     OD = convert_RGB_to_OD(img).reshape((-1, 3))
     HE = spams.lasso(
-            X=OD.T,
-            D=stain_matrix.T,
-            mode=2,
-            lambda1=regularizer,
-            pos=True,
-            numThreads=1,
-        )
+        X=OD.T,
+        D=stain_matrix.T,
+        mode=2,
+        lambda1=regularizer,
+        pos=True,
+        numThreads=1,
+    )
     return HE.toarray().T
 
 
@@ -141,7 +146,12 @@ class StainAugmentor(ImageOnlyTransform):
             ),
         }
 
-    def initialize(self, alpha, beta, shape=2):
+    def initialize(
+        self,
+        alpha: Optional[NDArray[(Any, ...), float]],
+        beta: Optional[NDArray[(Any, ...), float]],
+        shape: Tuple[int, ...] = 2,
+    ) -> Tuple[NDArray[(Any, ...)], NDArray[(Any, ...)]]:
         alpha = ifnone(alpha, np.ones(shape))
         beta = ifnone(beta, np.zeros(shape))
         return alpha, beta

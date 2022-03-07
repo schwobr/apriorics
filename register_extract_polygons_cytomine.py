@@ -4,7 +4,6 @@ from pathaia.patches import slide_rois_no_image
 from pathaia.util.types import Slide
 from PIL import Image
 import numpy as np
-from cucim import CuImage
 from pathaia.util.types import Patch
 from shapely.affinity import affine_transform
 from shapely.ops import unary_union
@@ -83,9 +82,9 @@ def get_box_filter(slide, box):
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    slide_he = CuImage(str(args.slidefolder / args.heslide))
-    slide_ihc = CuImage(str(args.slidefolder / args.ihcslide))
-    w, h = slide_he.size("XY")
+    slide_he = Slide(args.slidefolder / args.heslide)
+    slide_ihc = Slide(args.slidefolder / args.ihcslide)
+    w, h = slide_he.dimensions
     ihc_type = IHC_MAPPING[int(args.ihcslide.split("-")[-1].split("_")[0])]
 
     if args.box is not None:

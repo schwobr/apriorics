@@ -109,6 +109,9 @@ if __name__ == "__main__":
         """if (args.maskfolder / f"{hefile.stem}.tif").exists():
             continue"""
 
+        if hefile.stem == "21I000004-1-03-1_135435":
+            continue
+
         print(hefile, ihcfile)
 
         slide_he = Slide(hefile, backend="cucim")
@@ -216,7 +219,7 @@ if __name__ == "__main__":
         Image.fromarray(full_mask).save(maskpath)
         vips_cmd = (
             f"vips tiffsave {maskpath} {maskpath.with_suffix('.tif')} "
-            "--compression jpeg --tile-width 1024 --tile-height 1024 --tile "
+            "--compression jpeg --tile-width 256 --tile-height 256 --tile "
             "--pyramid"
         )
 

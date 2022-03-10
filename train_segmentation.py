@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+from math import ceil
 from pathlib import Path
 from torch.utils.data import DataLoader
 from apriorics.model_components.normalization import group_norm
@@ -26,7 +27,7 @@ parser.add_argument("--maskfolder", type=Path)
 parser.add_argument("--stain-matrices-folder", type=Path)
 parser.add_argument("--split-csv", type=Path)
 parser.add_argument("--logfolder", type=Path)
-parser.add_argument("--gpu", type=int)
+parser.add_argument("--gpus", type=int)
 parser.add_argument("--batch-size", type=int, default=8)
 parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--wd", type=float, default=1e-2)
@@ -101,7 +102,10 @@ if __name__ == "__main__":
     )
 
     scheduler_func = get_scheduler_func(
-        args.scheduler, total_steps=len(train_dl) * args.epochs, lr=args.lr
+        args.scheduler,
+        total_steps=ceil(len(train_dl) / (args.grad_accumulation * args.gpus))
+        * args.epochs,
+        lr=args.lr,
     )
 
     model = args.model.split("/")
@@ -115,7 +119,7 @@ if __name__ == "__main__":
         pretrained=True,
         img_size=args.patch_size,
         num_classes=1,
-        norm_layer=group_norm if args.group_norm else torch.nn.BatchNorm2d
+        norm_layer=group_norm if args.group_norm else torch.nn.BatchNorm2d,
     )
 
     plmodule = BasicSegmentationModule(
@@ -154,14 +158,14 @@ if __name__ == "__main__":
     )
 
     trainer = pl.Trainer(
-        accelerator="gpu",
-        devices=[args.gpu],
+        gpus=1,
         min_epochs=args.epochs,
         max_epochs=args.epochs,
         logger=logger,
         precision=16,
         accumulate_grad_batches=args.grad_accumulation,
         callbacks=[ckpt_callback],
+        strategy="horovod",
     )
 
     if args.resume_version is not None:

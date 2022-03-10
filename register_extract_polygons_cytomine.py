@@ -15,6 +15,7 @@ from apriorics.registration import (
 from apriorics.masks import get_tissue_mask, get_mask_function
 from apriorics.polygons import mask_to_polygons_layer
 from apriorics.cytomine import upload_polygons_to_cytomine
+import os
 
 
 IHC_MAPPING = {
@@ -31,9 +32,6 @@ IHC_MAPPING = {
 
 
 parser = ArgumentParser(prog="Upload image example")
-parser.add_argument("--host", help="The Cytomine host")
-parser.add_argument("--public_key", help="The Cytomine public key")
-parser.add_argument("--private_key", help="The Cytomine private key")
 parser.add_argument(
     "--id_project", type=int, help="The project where to add the uploaded image"
 )
@@ -200,9 +198,9 @@ if __name__ == "__main__":
     upload_polygons_to_cytomine(
         all_polygons,
         args.heslide,
-        args.host,
-        args.public_key,
-        args.private_key,
+        "localhost-core",
+        os.environ["CYTOMINE_PUBLIC_KEY"],
+        os.environ["CYTOMINE_PRIVATE_KEY"],
         args.id_project,
         term=args.term,
         polygon_type=args.polygon_type,

@@ -6,6 +6,7 @@ from skimage.morphology import (
     remove_small_objects,
     binary_closing,
     disk,
+    label
 )
 import numpy as np
 from pathaia.util.types import NDImage, NDByteGrayImage, NDBoolMask
@@ -147,3 +148,18 @@ def update_full_mask(
     dy = min(h, y + p_h) - y
     dx = min(w, x + p_w) - x
     full_mask[y : y + dy, x : x + dx] = mask[:dy, :dx]
+
+
+def mask_to_bbox(mask: NDBoolMask):
+    labels, n = label(mask, return_num=True)
+    bboxes = []
+    masks = []
+
+    for i in range(1, n+1):
+        mask = labels == i
+        ii, jj = np.nonzero(mask)
+        y0, y1 = ii.min(), ii.max()
+        x0, x1 = jj.min(), jj.max()
+        bboxes.append([x0, y0, x1, y1])
+        masks.append(mask)
+    return np.array(bboxes, dtype=np.float32), np.stack(masks).astype(np.uint8)

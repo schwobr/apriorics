@@ -112,7 +112,7 @@ class BasicSegmentationModule(pl.LightningModule):
         x, y = batch
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        self.log(f"val_loss_{get_loss_name(self.loss)}", loss)
+        self.log(f"val_loss_{get_loss_name(self.loss)}", loss, sync_dist=True)
 
         y_hat = torch.sigmoid(y_hat)
         if batch_idx % 100 == 0:
@@ -121,7 +121,7 @@ class BasicSegmentationModule(pl.LightningModule):
         self.metrics(y_hat, y.int())
 
     def validation_epoch_end(self, outputs: Dict[str, Tensor]):
-        self.log_dict(self.metrics.compute())
+        self.log_dict(self.metrics.compute(), sync_dist=True)
 
     def configure_optimizers(
         self,

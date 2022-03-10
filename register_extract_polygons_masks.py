@@ -32,16 +32,6 @@ IHC_MAPPING = {
 
 
 parser = ArgumentParser(prog="Upload image example")
-parser.add_argument("--host", help="The Cytomine host")
-parser.add_argument("--public_key", help="The Cytomine public key")
-parser.add_argument("--private_key", help="The Cytomine private key")
-parser.add_argument(
-    "--id_project", type=int, help="The project where to add the uploaded image"
-)
-parser.add_argument(
-    "--term", help="term for the annotations. Must be defined in a cytomine ontology."
-)
-parser.add_argument("--polygon-type", default="polygon", choices=["polygon", "box"])
 parser.add_argument("--dab-thr", type=float, default=0.03)
 parser.add_argument("--object-min-size", type=int, default=1000)
 parser.add_argument(

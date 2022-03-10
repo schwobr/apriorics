@@ -6,7 +6,7 @@ from skimage.morphology import (
     remove_small_objects,
     binary_closing,
     disk,
-    label
+    label,
 )
 import numpy as np
 from pathaia.util.types import NDImage, NDByteGrayImage, NDBoolMask
@@ -115,6 +115,33 @@ def get_mask_AE1AE3(
     return mask
 
 
+def get_mask_PHH3(
+    he: Union[Image, NDImage], ihc: Union[Image, NDImage]
+) -> NDBoolMask:
+    r"""
+    Compute mask on paired PHH3 immunohistochemistry and H&E images.
+
+    Args:
+        he: input H&E image. Mask is computed using a threshold on H channel.
+        ihc: input immunohistochemistry image. Mask is computed using a threshold on
+            DAB channel.
+
+    Returns:
+        Intersection of H&E and IHC masks.
+    """
+    he_H = rgb2hed(np.asarray(he))[:, :, 0]
+    ihc_DAB = rgb2hed(np.asarray(ihc))[:, :, 2]
+    mask_he = remove_small_objects(
+        remove_small_holes(he_H > 0.07, area_threshold=50), min_size=50
+    )
+    mask_ihc = remove_small_objects(
+        remove_small_holes(ihc_DAB > 0.04, area_threshold=50), min_size=50
+    )
+
+    mask = remove_small_objects(mask_he & mask_ihc, min_size=100)
+    return mask
+
+
 def get_mask_function(ihc_type: str) -> Callable:
     r"""
     Get mask function corresponding to an immunohistochemistry type.
@@ -155,7 +182,7 @@ def mask_to_bbox(mask: NDBoolMask):
     bboxes = []
     masks = []
 
-    for i in range(1, n+1):
+    for i in range(1, n + 1):
         mask = labels == i
         ii, jj = np.nonzero(mask)
         y0, y1 = ii.min(), ii.max()

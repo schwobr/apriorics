@@ -51,6 +51,7 @@ parser.add_argument("--slidefile", type=Path)
 parser.add_argument("--tmpfolder", type=Path, default=Path("/tmp/cyto_annotations"))
 parser.add_argument("--maskfolder", type=Path)
 parser.add_argument("--wktfolder", type=Path)
+parser.add_argument("--novips", action="store_true")
 parser.add_argument("-v", "--verbose", action="count")
 
 
@@ -233,15 +234,16 @@ if __name__ == "__main__":
 
         maskpath = args.maskfolder / f"{hefile.stem}.png"
         Image.fromarray(full_mask).save(maskpath)
-        vips_cmd = (
-            f"vips tiffsave {maskpath} {maskpath.with_suffix('.tif')} "
-            "--compression jpeg --tile-width 256 --tile-height 256 --tile "
-            "--pyramid"
-        )
+        if not args.novips:
+            vips_cmd = (
+                f"vips tiffsave {maskpath} {maskpath.with_suffix('.tif')} "
+                "--compression jpeg --tile-width 256 --tile-height 256 --tile "
+                "--pyramid"
+            )
 
-        run(vips_cmd.split())
+            run(vips_cmd.split())
 
-        maskpath.unlink()
+            maskpath.unlink()
 
         print("Mask saved.")
 

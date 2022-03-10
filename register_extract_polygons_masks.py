@@ -16,6 +16,7 @@ from apriorics.registration import (
 )
 from apriorics.masks import get_tissue_mask, get_mask_function, update_full_mask
 from apriorics.polygons import mask_to_polygons_layer
+from ordered_set import OrderedSet
 
 
 IHC_MAPPING = {
@@ -46,6 +47,7 @@ parser.add_argument("--crop", type=float, default=0.05)
 parser.add_argument("--box", type=int, nargs="*")
 parser.add_argument("--slidefolder", type=Path)
 parser.add_argument("--ihc-id", type=int)
+parser.add_argument("--slidefile", type=Path)
 parser.add_argument("--tmpfolder", type=Path, default=Path("/tmp/cyto_annotations"))
 parser.add_argument("--maskfolder", type=Path)
 parser.add_argument("--wktfolder", type=Path)
@@ -67,6 +69,23 @@ def get_box_filter(slide, box):
     return _filter
 
 
+def get_filefilter(slidefile):
+    if slidefile is not None:
+        with open(slidefile, "r") as f:
+            files = set(f.read().rstrip().split("\n"))
+    else:
+        files = None
+
+    def _filter(items):
+        names = OrderedSet(items.map(lambda x: x.stem))
+        if files is not None:
+            return names.index(names & files)
+        else:
+            return list(range(len(names)))
+
+    return _filter
+
+
 if __name__ == "__main__":
     args = parser.parse_args()
 
@@ -84,7 +103,7 @@ if __name__ == "__main__":
     box = (crop, crop, args.psize - crop, args.psize - crop)
 
     k = (args.ihc_id - 1) % 12 + 1
-    ihc_type = IHC_MAPPING[k+12]
+    ihc_type = IHC_MAPPING[k + 12]
 
     hefiles = get_files(args.slidefolder, extensions=[".svs"], recurse=False).filter(
         lambda x: int(x.stem.split("-")[-1].split("_")[0]) == k
@@ -95,9 +114,14 @@ if __name__ == "__main__":
     )
     ihcfiles.sort(key=lambda x: x.stem.split("-")[0])
 
+    filefilter = get_filefilter(args.slidefile)
+    idxs = filefilter(hefiles)
+    hefiles = hefiles[idxs]
+    ihcfiles = ihcfiles[idxs]
+
     for hefile, ihcfile in zip(hefiles, ihcfiles):
         """if (args.maskfolder / f"{hefile.stem}.tif").exists():
-            continue"""
+        continue"""
 
         if hefile.stem == "21I000004-1-03-1_135435":
             continue
@@ -119,7 +143,9 @@ if __name__ == "__main__":
         try:
             coord_tfm = get_coord_transform(slide_he, slide_ihc)
         except IndexError:
-            def coord_tfm(x, y): return Coord(x, y)
+
+            def coord_tfm(x, y):
+                return Coord(x, y)
 
         all_polygons = []
 

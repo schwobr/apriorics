@@ -70,7 +70,7 @@ def get_angle(v1: NDArray[(2,), Number], v2: NDArray[(2,), Number]) -> float:
 
 
 def get_sort_key(
-    vertices: Sequence[Tuple[Number, Number]]
+    vertices: Sequence[Tuple[Number, Number]], centroid: Tuple[int, int]
 ) -> Callable[[Tuple[Number, Number]], float]:
     r"""
     Computes a key function that aims at sorting vertices by increasing angle around
@@ -84,7 +84,7 @@ def get_sort_key(
         horizontal unit vector and the vector between the vertices' centroid and the
         input vertex.
     """
-    center = np.array(vertices).mean(0)
+    center = np.array(centroid)
 
     def _key(vertex):
         vertex = np.array(vertex)
@@ -94,7 +94,7 @@ def get_sort_key(
     return _key
 
 
-def get_vertices(mask: NDBoolMask) -> List[Tuple[int, int]]:
+def get_vertices(mask: NDBoolMask, centroid: Tuple[int, int]) -> List[Tuple[int, int]]:
     r"""
     Given a fixing dot mask (obtained using :func:`get_dot_mask`), get list of all dots'
     centroid coordinates, sorted in trigonometric order.
@@ -110,10 +110,7 @@ def get_vertices(mask: NDBoolMask) -> List[Tuple[int, int]]:
     for i in range(1, labels.max() + 1):
         ii, jj = (labels == i).nonzero()
         vertices.append((int(jj.mean()), int(ii.mean())))
-    vertices.sort()
-    while len(vertices) > 4:
-        vertices.pop()
-    vertices.sort(key=get_sort_key(vertices))
+    vertices.sort(key=get_sort_key(vertices, centroid))
     return vertices
 
 
@@ -196,7 +193,10 @@ def get_translation(
 
 
 def equalize_vert_lengths(
-    l1: List[Tuple[Number, Number]], l2: List[Tuple[Number, Number]]
+    l1: List[Tuple[Number, Number]],
+    l2: List[Tuple[Number, Number]],
+    centroid1: Tuple[int, int],
+    centroid2: Tuple[int, int],
 ):
     r"""
     Given 2 lists of vertices coordinates, remove items from the longest one that are
@@ -206,17 +206,35 @@ def equalize_vert_lengths(
         l1: first list of vertices coordinates.
         l2: second list of vertices coordinates.
     """
-    l1, l2 = sorted([l1, l2], key=len)
-    sorted_l2 = sorted(
-        l2, key=lambda x: min([(x[1] - y[1]) ** 2 + (x[0] - y[0]) ** 2 for y in l1])
-    )
+    if len(l1) > len(l2):
+        ltemp = l1
+        centroidtemp = centroid1
+        l1 = l2
+        centroid1 = centroid2
+        l2 = ltemp
+        centroid2 = centroidtemp
+
+    def _key(x):
+        angle_diffs = []
+        vx = np.array(x) - np.array(centroid2)
+        ax = get_angle(np.array([1, 0]), vx)
+        for y in l1:
+            vy = np.array(y) - np.array(centroid1)
+            ay = get_angle(np.array([1, 0]), vy)
+            angle_diffs.append(abs(ax-ay))
+        return min(angle_diffs)
+
+    sorted_l2 = sorted(l2, key=_key)
     while len(l2) > len(l1):
         to_remove = sorted_l2.pop()
         l2.remove(to_remove)
 
 
 def get_affine_transform(
-    fixed: NDBoolMask, moving: NDBoolMask
+    fixed: NDBoolMask,
+    moving: NDBoolMask,
+    centroid_fixed: Tuple[int, int],
+    centroid_moving: Tuple[int, int],
 ) -> Tuple[NDArray[(3, 3), float], NDArray[(3, 3), float], NDArray[(3, 3), float]]:
     r"""
     Given 2 dot masks, get the affine transform (as rotation, scale and translation) to
@@ -229,10 +247,14 @@ def get_affine_transform(
     Returns:
         Tuple containing the rotation, the scale and the translation 3x3 matrices.
     """
-    fixed_vert = get_vertices(fixed)
-    moving_vert = get_vertices(moving)
+    fixed_vert = get_vertices(fixed, centroid_fixed)
+    moving_vert = get_vertices(moving, centroid_moving)
     if len(fixed_vert) != len(moving_vert):
-        equalize_vert_lengths(fixed_vert, moving_vert)
+        equalize_vert_lengths(fixed_vert, moving_vert, centroid_fixed, centroid_moving)
+    while len(fixed_vert) > 4:
+        fixed_vert.pop()
+    while len(moving_vert) > 4:
+        moving_vert.pop()
     fixed_vert = np.array(fixed_vert)
     moving_vert = np.array(moving_vert)
     rot = get_rotation(fixed_vert, moving_vert)
@@ -244,6 +266,14 @@ def get_affine_transform(
     reg_vert = (scale @ reg_vert.T).T
     trans = get_translation(fixed_vert, reg_vert[:, :2])
     return rot, scale, trans
+
+
+def get_centroid(slide, thumb_size):
+    ii, jj = get_tissue_mask(
+        np.asarray(slide.get_thumbnail(thumb_size).convert("L"))
+    ).nonzero()
+    centroid = (int(jj.mean()), int(ii.mean()))
+    return centroid
 
 
 def get_coord_transform(
@@ -264,7 +294,11 @@ def get_coord_transform(
     thumb_level = slide_he.level_count - 1
     mask_he = get_dot_mask(slide_he, thumb_level=thumb_level)
     mask_ihc = get_dot_mask(slide_ihc, thumb_level=thumb_level)
-    rot, scale, trans = get_affine_transform(mask_ihc, mask_he)
+    centroid_he = get_centroid(slide_he, mask_he.T.shape)
+    centroid_ihc = get_centroid(slide_ihc, mask_ihc.T.shape)
+    rot, scale, trans = get_affine_transform(
+        mask_ihc, mask_he, centroid_ihc, centroid_he
+    )
     dsr = slide_he.dimensions[1] / mask_he.shape[0]
     trans[:2, 2] *= dsr
     affine = trans @ scale @ rot

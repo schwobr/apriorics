@@ -136,7 +136,8 @@ def get_rotation(
             [np.cos(angle), -np.sin(angle), 0],
             [np.sin(angle), np.cos(angle), 0],
             [0, 0, 1],
-        ]
+        ],
+        dtype=np.float64,
     )
 
 
@@ -169,7 +170,7 @@ def get_scale(
     else:
         scale_x = (x_fixed_max - x_fixed_min) / (x_moving_max - x_moving_min)
         scale_y = (y_fixed_max - y_fixed_min) / (y_moving_max - y_moving_min)
-    return np.array([[scale_x, 0, 0], [0, scale_y, 0], [0, 0, 1]])
+    return np.array([[scale_x, 0, 0], [0, scale_y, 0], [0, 0, 1]], dtype=np.float64)
 
 
 def get_translation(
@@ -189,7 +190,7 @@ def get_translation(
         2D translation 3x3 matrix.
     """
     xoff, yoff = fixed_vert.min(0) - moving_vert.min(0)
-    return np.array([[1, 0, xoff], [0, 1, yoff], [0, 0, 1]])
+    return np.array([[1, 0, xoff], [0, 1, yoff], [0, 0, 1]], dtype=np.float64)
 
 
 def equalize_vert_lengths(
@@ -221,7 +222,7 @@ def equalize_vert_lengths(
         for y in l1:
             vy = np.array(y) - np.array(centroid1)
             ay = get_angle(np.array([1, 0]), vy)
-            angle_diffs.append(abs(ax-ay))
+            angle_diffs.append(abs(ax - ay))
         return min(angle_diffs)
 
     sorted_l2 = sorted(l2, key=_key)
@@ -257,13 +258,19 @@ def get_affine_transform(
         moving_vert.pop()
     fixed_vert = np.array(fixed_vert)
     moving_vert = np.array(moving_vert)
-    rot = get_rotation(fixed_vert, moving_vert)
-    reg_vert = np.concatenate(
-        (moving_vert, [[1] for _ in range(len(fixed_vert))]), axis=1
-    )
-    reg_vert = (rot @ reg_vert.T).T
-    scale = get_scale(fixed_vert, reg_vert[:, :2])
-    reg_vert = (scale @ reg_vert.T).T
+
+    if len(fixed_vert) > 1 and len(moving_vert) > 1:
+        rot = get_rotation(fixed_vert, moving_vert)
+        reg_vert = np.concatenate(
+            (moving_vert, [[1] for _ in range(len(fixed_vert))]), axis=1
+        )
+        reg_vert = (rot @ reg_vert.T).T
+        scale = get_scale(fixed_vert, reg_vert[:, :2])
+        reg_vert = (scale @ reg_vert.T).T
+    else:
+        rot = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float64)
+        scale = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float64)
+        reg_vert = moving_vert
     trans = get_translation(fixed_vert, reg_vert[:, :2])
     return rot, scale, trans
 

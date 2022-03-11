@@ -45,7 +45,9 @@ def get_dot_mask(
     mask = np.ones(thumb.shape[:2], dtype=bool)
     for i in range(3):
         mask = mask & (min_val < thumb[:, :, i]) & (thumb[:, :, i] < max_val)
-        mask = remove_small_holes(remove_small_objects(mask), area_threshold=500)
+        mask = remove_small_holes(
+            remove_small_objects(mask, min_size=200), area_threshold=500
+        )
     return mask
 
 

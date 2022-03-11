@@ -494,7 +494,7 @@ def full_registration(
 
     mask = get_dab_mask(ihc, dab_thr=dab_thr, object_min_size=object_min_size)
 
-    if not mask.sum():
+    if mask.sum() < object_min_size:
         print("Mask would be empty, skipping.")
         return False
 
@@ -510,6 +510,8 @@ def full_registration(
 
     print("Starting registration...")
 
+    resample = int(100000 / patch_he.size[0])
+
     register(
         base_path,
         he_H_path,
@@ -517,7 +519,7 @@ def full_registration(
         he_path.with_suffix(".nii.gz"),
         ihc_path.with_suffix(".nii.gz"),
         reg_path.with_suffix(".nii.gz"),
-        resample=20,
+        resample=resample,
         iterations=iterations,
     )
 

@@ -46,7 +46,7 @@ def get_dot_mask(
     for i in range(3):
         mask = mask & (min_val < thumb[:, :, i]) & (thumb[:, :, i] < max_val)
         mask = remove_small_holes(
-            remove_small_objects(mask, min_size=200), area_threshold=500
+            remove_small_objects(mask, min_size=250), area_threshold=500
         )
     return mask
 
@@ -490,7 +490,10 @@ def full_registration(
     he, he_G, he_H = get_input_images(slide_he, patch_he)
     ihc, ihc_G, ihc_H = get_input_images(slide_ihc, patch_ihc)
 
-    if not (has_enough_tissue(he_G, whitetol=255, area_thr=0.7)):
+    if not (
+        has_enough_tissue(he_G, whitetol=247, area_thr=0.2)
+        and has_enough_tissue(ihc_G, whitetol=247, area_thr=0.05)
+    ):
         print("Patch doesn't contain enough tissue, skipping.")
         return False
 

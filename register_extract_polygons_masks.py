@@ -121,10 +121,7 @@ if __name__ == "__main__":
     ihcfiles = ihcfiles[idxs]
 
     for hefile, ihcfile in zip(hefiles, ihcfiles):
-        """if (args.maskfolder / f"{hefile.stem}.tif").exists():
-        continue"""
-
-        if hefile.stem == "21I000004-1-03-1_135435":
+        if (args.maskfolder / f"{hefile.stem}.tif").exists():
             continue
 
         print(hefile, ihcfile)

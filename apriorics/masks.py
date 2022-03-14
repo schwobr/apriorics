@@ -191,7 +191,7 @@ def update_full_mask(
     full_mask[y : y + dy, x : x + dx] = mask[:dy, :dx]
 
 
-def mask_to_bbox(mask: NDBoolMask):
+def mask_to_bbox(mask: NDBoolMask, pad: int = 5):
     labels, n = label(mask, return_num=True)
     bboxes = []
     masks = []
@@ -201,6 +201,6 @@ def mask_to_bbox(mask: NDBoolMask):
         ii, jj = np.nonzero(mask)
         y0, y1 = ii.min(), ii.max()
         x0, x1 = jj.min(), jj.max()
-        bboxes.append([x0, y0, x1, y1])
+        bboxes.append([x0-pad, y0-pad, x1+pad, y1+pad])
         masks.append(mask)
     return np.array(bboxes, dtype=np.float32), np.stack(masks).astype(np.uint8)

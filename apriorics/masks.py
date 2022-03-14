@@ -97,7 +97,9 @@ def get_mask_AE1AE3(
     Returns:
         Intersection of H&E and IHC masks.
     """
-    he_H = rgb2hed(np.asarray(he))[:, :, 0]
+    he_H = rgb2hed(np.asarray(he))
+    he_DAB = he_H[:, :, 2]
+    he_H = he_H[:, :, 0]
     ihc_DAB = rgb2hed(np.asarray(ihc))[:, :, 2]
     mask_he = binary_closing(
         remove_small_objects(
@@ -111,7 +113,13 @@ def get_mask_AE1AE3(
         ),
         footprint=disk(10),
     )
-    mask = remove_small_objects(mask_he & mask_ihc, min_size=500)
+    mask_he_DAB = binary_closing(
+        remove_small_objects(
+            remove_small_holes(he_DAB > 0.03, area_threshold=1000), min_size=500
+        ),
+        footprint=disk(10),
+    )
+    mask = remove_small_objects(mask_he & ~mask_he_DAB & mask_ihc, min_size=500)
     return mask
 
 
@@ -129,7 +137,9 @@ def get_mask_PHH3(
     Returns:
         Intersection of H&E and IHC masks.
     """
-    he_H = rgb2hed(np.asarray(he))[:, :, 0]
+    he_H = rgb2hed(np.asarray(he))
+    he_DAB = he_H[:, :, 2]
+    he_H = he_H[:, :, 0]
     ihc_DAB = rgb2hed(np.asarray(ihc))[:, :, 2]
     mask_he = remove_small_objects(
         remove_small_holes(he_H > 0.07, area_threshold=50), min_size=50
@@ -138,7 +148,11 @@ def get_mask_PHH3(
         remove_small_holes(ihc_DAB > 0.04, area_threshold=50), min_size=50
     )
 
-    mask = remove_small_objects(mask_he & mask_ihc, min_size=100)
+    mask_he_DAB = remove_small_objects(
+        remove_small_holes(he_DAB > 0.04, area_threshold=50), min_size=50
+    )
+
+    mask = remove_small_objects(mask_he & mask_ihc & ~mask_he_DAB, min_size=100)
     return mask
 
 

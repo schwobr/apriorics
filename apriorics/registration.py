@@ -198,6 +198,7 @@ def equalize_vert_lengths(
     l2: List[Tuple[Number, Number]],
     centroid1: Tuple[int, int],
     centroid2: Tuple[int, int],
+    max_angle: float = 0.4,
 ):
     r"""
     Given 2 lists of vertices coordinates, remove items from the longest one that are
@@ -226,9 +227,14 @@ def equalize_vert_lengths(
         return min(angle_diffs)
 
     sorted_l2 = sorted(l2, key=_key)
-    while len(l2) > len(l1):
+    cur_angle = _key(sorted_l2[-1])
+    while len(l2) > len(l1) or cur_angle > max_angle:
         to_remove = sorted_l2.pop()
+        cur_angle = _key(sorted_l2[-1])
         l2.remove(to_remove)
+
+    if len(l1) != len(l2):
+        equalize_vert_lengths(l1, l2, centroid1, centroid2, max_angle=max_angle)
 
 
 def get_affine_transform(

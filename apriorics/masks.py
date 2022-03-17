@@ -6,6 +6,7 @@ from skimage.morphology import (
     remove_small_objects,
     binary_closing,
     disk,
+    label,
 )
 import numpy as np
 from pathaia.util.types import NDImage, NDByteGrayImage, NDBoolMask
@@ -96,7 +97,9 @@ def get_mask_AE1AE3(
     Returns:
         Intersection of H&E and IHC masks.
     """
-    he_H = rgb2hed(np.asarray(he))[:, :, 0]
+    he_H = rgb2hed(np.asarray(he))
+    he_DAB = he_H[:, :, 2]
+    he_H = he_H[:, :, 0]
     ihc_DAB = rgb2hed(np.asarray(ihc))[:, :, 2]
     mask_he = binary_closing(
         remove_small_objects(
@@ -110,7 +113,45 @@ def get_mask_AE1AE3(
         ),
         footprint=disk(10),
     )
-    mask = remove_small_objects(mask_he & mask_ihc, min_size=500)
+    mask_he_DAB = binary_closing(
+        remove_small_objects(
+            remove_small_holes(he_DAB > 0.03, area_threshold=1000), min_size=500
+        ),
+        footprint=disk(10),
+    )
+    mask = remove_small_objects(mask_he & ~mask_he_DAB & mask_ihc, min_size=500)
+    return mask
+
+
+def get_mask_PHH3(he: Union[Image, NDImage], ihc: Union[Image, NDImage]) -> NDBoolMask:
+    r"""
+    Compute mask on paired PHH3 immunohistochemistry and H&E images.
+
+    Args:
+        he: input H&E image. Mask is computed using a threshold on H channel.
+        ihc: input immunohistochemistry image. Mask is computed using a threshold on
+            DAB channel.
+
+    Returns:
+        Intersection of H&E and IHC masks.
+    """
+    he_H = rgb2hed(np.asarray(he))
+    he_DAB = he_H[:, :, 2]
+    he_H = he_H[:, :, 0]
+    ihc_DAB = rgb2hed(np.asarray(ihc))[:, :, 2]
+    mask_he = remove_small_objects(
+        remove_small_holes((he_H > 0.07) & (he_H < 0.14), area_threshold=50),
+        min_size=50,
+    )
+    mask_ihc = remove_small_objects(
+        remove_small_holes(ihc_DAB > 0.04, area_threshold=50), min_size=50
+    )
+
+    mask_he_DAB = remove_small_objects(
+        remove_small_holes(he_DAB > 0.04, area_threshold=50), min_size=50
+    )
+
+    mask = remove_small_objects(mask_he & mask_ihc & ~mask_he_DAB, min_size=100)
     return mask
 
 
@@ -147,3 +188,18 @@ def update_full_mask(
     dy = min(h, y + p_h) - y
     dx = min(w, x + p_w) - x
     full_mask[y : y + dy, x : x + dx] = mask[:dy, :dx]
+
+
+def mask_to_bbox(mask: NDBoolMask, pad: int = 5):
+    labels, n = label(mask, return_num=True)
+    bboxes = []
+    masks = []
+
+    for i in range(1, n + 1):
+        mask = labels == i
+        ii, jj = np.nonzero(mask)
+        y0, y1 = ii.min(), ii.max()
+        x0, x1 = jj.min(), jj.max()
+        bboxes.append([x0 - pad, y0 - pad, x1 + pad, y1 + pad])
+        masks.append(mask)
+    return np.array(bboxes, dtype=np.float32), np.stack(masks).astype(np.uint8)

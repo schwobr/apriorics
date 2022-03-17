@@ -16,6 +16,7 @@ from apriorics.registration import (
 )
 from apriorics.masks import get_tissue_mask, get_mask_function, update_full_mask
 from apriorics.polygons import mask_to_polygons_layer
+from ordered_set import OrderedSet
 
 
 IHC_MAPPING = {
@@ -32,16 +33,6 @@ IHC_MAPPING = {
 
 
 parser = ArgumentParser(prog="Upload image example")
-parser.add_argument("--host", help="The Cytomine host")
-parser.add_argument("--public_key", help="The Cytomine public key")
-parser.add_argument("--private_key", help="The Cytomine private key")
-parser.add_argument(
-    "--id_project", type=int, help="The project where to add the uploaded image"
-)
-parser.add_argument(
-    "--term", help="term for the annotations. Must be defined in a cytomine ontology."
-)
-parser.add_argument("--polygon-type", default="polygon", choices=["polygon", "box"])
 parser.add_argument("--dab-thr", type=float, default=0.03)
 parser.add_argument("--object-min-size", type=int, default=1000)
 parser.add_argument(
@@ -56,9 +47,11 @@ parser.add_argument("--crop", type=float, default=0.05)
 parser.add_argument("--box", type=int, nargs="*")
 parser.add_argument("--slidefolder", type=Path)
 parser.add_argument("--ihc-id", type=int)
+parser.add_argument("--slidefile", type=Path)
 parser.add_argument("--tmpfolder", type=Path, default=Path("/tmp/cyto_annotations"))
 parser.add_argument("--maskfolder", type=Path)
 parser.add_argument("--wktfolder", type=Path)
+parser.add_argument("--novips", action="store_true")
 parser.add_argument("-v", "--verbose", action="count")
 
 
@@ -73,6 +66,23 @@ def get_box_filter(slide, box):
         mask = np.zeros(thumb.shape[:2], dtype=bool)
         mask[y0:y1, x0:x1] = True
         return mask
+
+    return _filter
+
+
+def get_filefilter(slidefile):
+    if slidefile is not None:
+        with open(slidefile, "r") as f:
+            files = set(f.read().rstrip().split("\n"))
+    else:
+        files = None
+
+    def _filter(items):
+        names = OrderedSet(items.map(lambda x: x.stem))
+        if files is not None:
+            return names.index(names & files)
+        else:
+            return list(range(len(names)))
 
     return _filter
 
@@ -94,7 +104,7 @@ if __name__ == "__main__":
     box = (crop, crop, args.psize - crop, args.psize - crop)
 
     k = (args.ihc_id - 1) % 12 + 1
-    ihc_type = IHC_MAPPING[k+12]
+    ihc_type = IHC_MAPPING[k + 12]
 
     hefiles = get_files(args.slidefolder, extensions=[".svs"], recurse=False).filter(
         lambda x: int(x.stem.split("-")[-1].split("_")[0]) == k
@@ -105,11 +115,15 @@ if __name__ == "__main__":
     )
     ihcfiles.sort(key=lambda x: x.stem.split("-")[0])
 
-    for hefile, ihcfile in zip(hefiles, ihcfiles):
-        """if (args.maskfolder / f"{hefile.stem}.tif").exists():
-            continue"""
+    filefilter = get_filefilter(args.slidefile)
+    idxs = filefilter(hefiles)
+    hefiles = hefiles[idxs]
+    ihcfiles = ihcfiles[idxs]
 
-        if hefile.stem == "21I000004-1-03-1_135435":
+    for hefile, ihcfile in zip(hefiles, ihcfiles):
+        if (args.maskfolder / f"{hefile.stem}.tif").exists() or (
+            args.maskfolder / f"{hefile.stem}.png"
+        ).exists():
             continue
 
         print(hefile, ihcfile)
@@ -129,7 +143,9 @@ if __name__ == "__main__":
         try:
             coord_tfm = get_coord_transform(slide_he, slide_ihc)
         except IndexError:
-            def coord_tfm(x, y): return Coord(x, y)
+
+            def coord_tfm(x, y):
+                return Coord(x, y)
 
         all_polygons = []
 
@@ -217,15 +233,16 @@ if __name__ == "__main__":
 
         maskpath = args.maskfolder / f"{hefile.stem}.png"
         Image.fromarray(full_mask).save(maskpath)
-        vips_cmd = (
-            f"vips tiffsave {maskpath} {maskpath.with_suffix('.tif')} "
-            "--compression jpeg --tile-width 256 --tile-height 256 --tile "
-            "--pyramid"
-        )
+        if not args.novips:
+            vips_cmd = (
+                f"vips tiffsave {maskpath} {maskpath.with_suffix('.tif')} "
+                "--compression jpeg --tile-width 256 --tile-height 256 --tile "
+                "--pyramid"
+            )
 
-        run(vips_cmd.split())
+            run(vips_cmd.split())
 
-        maskpath.unlink()
+            maskpath.unlink()
 
         print("Mask saved.")
 

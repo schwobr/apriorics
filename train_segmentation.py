@@ -21,6 +21,20 @@ from timm import create_model
 
 parser = ArgumentParser()
 parser.add_argument("--model")
+parser.add_argument(
+    "--ihc-type",
+    choices=[
+        "AE1AE3",
+        "CD163",
+        "CD3CD20",
+        "EMD",
+        "ERGCaldes",
+        "ERGPodo",
+        "INI1",
+        "P40ColIV",
+        "PHH3",
+    ],
+)
 parser.add_argument("--patch-csv-folder", type=Path)
 parser.add_argument("--slidefolder", type=Path)
 parser.add_argument("--maskfolder", type=Path)
@@ -143,11 +157,14 @@ if __name__ == "__main__":
 
     logger = CometLogger(
         api_key=os.environ["COMET_API_KEY"],
-        workspace="schwobr",
+        workspace="apriorics",
         save_dir=args.logfolder,
-        project_name="apriorics-ae1ae3",
+        project_name="apriorics",
         auto_metric_logging=False,
     )
+
+    logger.experiment.add_tag(args.ihc_type)
+    logger.log_graph(plmodule)
 
     ckpt_callback = ModelCheckpoint(
         save_top_k=3,

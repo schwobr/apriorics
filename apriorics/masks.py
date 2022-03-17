@@ -123,9 +123,7 @@ def get_mask_AE1AE3(
     return mask
 
 
-def get_mask_PHH3(
-    he: Union[Image, NDImage], ihc: Union[Image, NDImage]
-) -> NDBoolMask:
+def get_mask_PHH3(he: Union[Image, NDImage], ihc: Union[Image, NDImage]) -> NDBoolMask:
     r"""
     Compute mask on paired PHH3 immunohistochemistry and H&E images.
 
@@ -142,7 +140,8 @@ def get_mask_PHH3(
     he_H = he_H[:, :, 0]
     ihc_DAB = rgb2hed(np.asarray(ihc))[:, :, 2]
     mask_he = remove_small_objects(
-        remove_small_holes(he_H > 0.07, area_threshold=50), min_size=50
+        remove_small_holes((he_H > 0.07) & (he_H < 0.14), area_threshold=50),
+        min_size=50,
     )
     mask_ihc = remove_small_objects(
         remove_small_holes(ihc_DAB > 0.04, area_threshold=50), min_size=50
@@ -201,6 +200,6 @@ def mask_to_bbox(mask: NDBoolMask, pad: int = 5):
         ii, jj = np.nonzero(mask)
         y0, y1 = ii.min(), ii.max()
         x0, x1 = jj.min(), jj.max()
-        bboxes.append([x0-pad, y0-pad, x1+pad, y1+pad])
+        bboxes.append([x0 - pad, y0 - pad, x1 + pad, y1 + pad])
         masks.append(mask)
     return np.array(bboxes, dtype=np.float32), np.stack(masks).astype(np.uint8)

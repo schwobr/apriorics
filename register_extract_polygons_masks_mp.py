@@ -92,73 +92,6 @@ def get_filefilter(slidefile):
     return _filter
 
 
-def get_register_extract_mask_fn(
-    slide_he, slide_ihc, full_mask, crop, mask_function, coord_tfm, args
-):
-    box = (crop, crop, args.psize - crop, args.psize - crop)
-
-    def register_extract_mask(patch_he):
-        patch_ihc = Patch(
-            id=patch_he.id,
-            slidename="",
-            position=coord_tfm(*patch_he.position),
-            size=patch_he.size,
-            level=patch_he.level,
-            size_0=patch_he.size_0,
-        )
-
-        restart = True
-        iterations = 5000
-        count = 0
-        maxiter = 4
-
-        while restart and count < maxiter:
-            restart = not full_registration(
-                slide_he,
-                slide_ihc,
-                patch_he,
-                patch_ihc,
-                args.tmpfolder / os.getpid(),
-                dab_thr=args.dab_thr,
-                object_min_size=args.object_min_size,
-                iterations=iterations,
-                threads=1,
-                stdout=PIPE,
-                stderr=PIPE
-            )
-            if restart:
-                break
-            else:
-                ihc = (
-                    Image.open(args.tmpfolder / "ihc_warped.png")
-                    .convert("RGB")
-                    .crop(box)
-                )
-                tissue_mask = get_tissue_mask(
-                    np.asarray(ihc.convert("L")), whitetol=256
-                )
-                if tissue_mask.sum() < 0.999 * tissue_mask.size:
-                    restart = True
-                    iterations *= 2
-                    count += 1
-
-        if restart:
-            return
-
-        he = Image.open(args.tmpfolder / "he.png")
-        he = np.asarray(he.convert("RGB").crop(box))
-        mask = mask_function(he, np.asarray(ihc))
-        update_full_mask_mp(
-            full_mask, mask, *(patch_he.position + crop), *slide_he.dimensions
-        )
-        polygons = mask_to_polygons_layer(mask)
-        x, y = patch_he.position
-        moved_polygons = translate(polygons, x + crop, y + crop)
-        return moved_polygons
-
-    return register_extract_mask
-
-
 if __name__ == "__main__":
     args = parser.parse_args()
 
@@ -173,6 +106,7 @@ if __name__ == "__main__":
     historeg_path = args.tmpfolder / "historeg"
 
     crop = int(args.crop * args.psize)
+    box = (crop, crop, args.psize - crop, args.psize - crop)
 
     k = (args.ihc_id - 1) % 12 + 1
     ihc_type = IHC_MAPPING[k + 12]
@@ -220,16 +154,66 @@ if __name__ == "__main__":
 
         full_mask = Array(c_bool, [False for _ in range(h * w)])
 
-        with Pool(processes=args.num_workers) as pool:
-            register_mask_fn = get_register_extract_mask_fn(
-                slide_he,
-                slide_ihc,
-                full_mask,
-                crop,
-                get_mask_function(ihc_type),
-                coord_tfm,
-                args,
+        def register_extract_mask(patch_he):
+            patch_ihc = Patch(
+                id=patch_he.id,
+                slidename="",
+                position=coord_tfm(*patch_he.position),
+                size=patch_he.size,
+                level=patch_he.level,
+                size_0=patch_he.size_0,
             )
+
+            restart = True
+            iterations = 5000
+            count = 0
+            maxiter = 4
+
+            while restart and count < maxiter:
+                restart = not full_registration(
+                    slide_he,
+                    slide_ihc,
+                    patch_he,
+                    patch_ihc,
+                    args.tmpfolder / os.getpid(),
+                    dab_thr=args.dab_thr,
+                    object_min_size=args.object_min_size,
+                    iterations=iterations,
+                    threads=1,
+                    stdout=PIPE,
+                    stderr=PIPE
+                )
+                if restart:
+                    break
+                else:
+                    ihc = (
+                        Image.open(args.tmpfolder / "ihc_warped.png")
+                        .convert("RGB")
+                        .crop(box)
+                    )
+                    tissue_mask = get_tissue_mask(
+                        np.asarray(ihc.convert("L")), whitetol=256
+                    )
+                    if tissue_mask.sum() < 0.999 * tissue_mask.size:
+                        restart = True
+                        iterations *= 2
+                        count += 1
+
+            if restart:
+                return
+
+            he = Image.open(args.tmpfolder / "he.png")
+            he = np.asarray(he.convert("RGB").crop(box))
+            mask = get_mask_function(ihc_type)(he, np.asarray(ihc))
+            update_full_mask_mp(
+                full_mask, mask, *(patch_he.position + crop), *slide_he.dimensions
+            )
+            polygons = mask_to_polygons_layer(mask)
+            x, y = patch_he.position
+            moved_polygons = translate(polygons, x + crop, y + crop)
+            return moved_polygons
+
+        with Pool(processes=args.num_workers) as pool:
             patch_iter = slide_rois_no_image(
                 slide_he,
                 0,
@@ -238,7 +222,7 @@ if __name__ == "__main__":
                 thumb_size=5000,
                 slide_filters=["full"],
             )
-            all_polygons = pool.map(register_mask_fn, patch_iter)
+            all_polygons = pool.map(register_extract_mask, patch_iter)
 
         all_polygons = filter(lambda x: x is not None, all_polygons)
         all_polygons = unary_union(all_polygons)

@@ -427,7 +427,7 @@ def equalize_contrasts(
     return img_as_ubyte(he_H), img_as_ubyte(ihc_H)
 
 
-def convert_to_nifti(path: PathLike):
+def convert_to_nifti(path: PathLike, **run_kwargs):
     r"""
     Runs c2d on the input image to turn into
     `HistoReg <https://github.com/CBICA/HistoReg>`_ compatible nifti.
@@ -443,7 +443,7 @@ def convert_to_nifti(path: PathLike):
         f"c2d -mcs {path} -foreach -orient LP -spacing 1x1mm -origin 0x0mm -endfor -omc"
         f" {path.with_suffix('.nii.gz')}"
     )
-    run(c2d_cmd.split())
+    run(c2d_cmd.split(), **run_kwargs)
 
 
 def register(
@@ -455,6 +455,8 @@ def register(
     reg_path: PathLike,
     iterations: int = 20000,
     resample: int = 4,
+    threads=0,
+    **run_kwargs
 ):
     r"""
     Registers IHC H image into H&E H image using
@@ -476,10 +478,10 @@ def register(
     )
     historeg_cmd = (
         f"docker run -v {base_path}:/data historeg "
-        f"HistoReg -i {iterations} -r {resample} -s1 6 -s2 8 -f {he_H_path} -m "
-        f"{ihc_H_path} -o /data/historeg"
+        f"HistoReg -i {iterations} -r {resample} -s1 6 -s2 8 --threads {threads} -f "
+        f"{he_H_path} -m {ihc_H_path} -o /data/historeg"
     )
-    run(historeg_cmd.split())
+    run(historeg_cmd.split(), **run_kwargs)
 
     tfm_path = Path(
         f"/data/historeg/{ihc_H_path.stem}_registered_to_{he_H_path.stem}"
@@ -487,17 +489,17 @@ def register(
     )
     greedy_cmd = (
         f"docker run -v {base_path}:/data historeg "
-        f"greedy -d 2 -rf {he_path} -rm {ihc_path} {reg_path} -r "
+        f"greedy -d 2 --threads {threads} -rf {he_path} -rm {ihc_path} {reg_path} -r "
         f"{tfm_path/'big_warp.nii.gz'} {tfm_path/'Affine.mat'}"
     )
-    run(greedy_cmd.split())
+    run(greedy_cmd.split(), **run_kwargs)
 
     c2d_cmd = (
         f"docker run -v {base_path}:/data historeg "
         f"c2d -mcs {reg_path} -foreach -type uchar -endfor -omc "
         f"{reg_path.with_suffix('').with_suffix('.png')}"
     )
-    run(c2d_cmd.split())
+    run(c2d_cmd.split(), **run_kwargs)
 
 
 def full_registration(
@@ -509,6 +511,8 @@ def full_registration(
     dab_thr: float = 0.03,
     object_min_size: int = 1000,
     iterations: int = 20000,
+    threads=0,
+    **run_kwargs
 ) -> bool:
     r"""
     Perform full registration process on patches from an IHC slide and a H&E slide.
@@ -557,8 +561,8 @@ def full_registration(
 
     imsave(he_path, he)
     imsave(ihc_path, ihc)
-    convert_to_nifti(he_path)
-    convert_to_nifti(ihc_path)
+    convert_to_nifti(he_path, **run_kwargs)
+    convert_to_nifti(ihc_path, **run_kwargs)
 
     print("Starting registration...")
 
@@ -573,6 +577,8 @@ def full_registration(
         reg_path.with_suffix(".nii.gz"),
         resample=resample,
         iterations=iterations,
+        threads=threads,
+        **run_kwargs
     )
 
     print("Registration done...")

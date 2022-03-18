@@ -1,3 +1,4 @@
+from multiprocessing import Array
 from typing import Callable, Optional, Union
 from skimage.filters import threshold_otsu
 from skimage.color import rgb2hed
@@ -188,6 +189,30 @@ def update_full_mask(
     dy = min(h, y + p_h) - y
     dx = min(w, x + p_w) - x
     full_mask[y : y + dy, x : x + dx] = mask[:dy, :dx]
+
+
+def update_full_mask_mp(
+    full_mask: Array,
+    mask: NDBoolMask,
+    x: int,
+    y: int,
+    h: int,
+    w: int
+):
+    r"""
+    Update a portion of a large mask using a smaller mask.
+
+    Args:
+        full_mask: large mask to update.
+        mask: small mask to use for update.
+        x: x coordinate of top-left corner of `mask` on `full_mask`.
+        y: y coordinate of top-left corner of `mask` on `full_mask`.
+    """
+    p_h, p_w = mask.shape
+    dy = min(h, y + p_h) - y
+    dx = min(w, x + p_w) - x
+    for i in range(y, y + dy):
+        full_mask[i * w + x : i * w + x + dx] = mask[i-y, :dx]
 
 
 def mask_to_bbox(mask: NDBoolMask, pad: int = 5):

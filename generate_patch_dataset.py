@@ -56,7 +56,7 @@ if __name__ == "__main__":
             slide,
             args.level,
             psize=args.patch_size,
-            slide_filters=[filter_thumbnail],  # get_mask_filter(mask, thumb_size=2000)]
+            slide_filters=[filter_thumbnail, get_mask_filter(mask, thumb_size=2000)],
             thumb_size=2000,
         )
 

@@ -1,7 +1,8 @@
+import horovod.torch
 from argparse import ArgumentParser
 from math import ceil
 from pathlib import Path
-from torch.utils.data import DataLoader
+from pytorch_lightning.loggers import CometLogger
 from apriorics.model_components.normalization import group_norm
 from apriorics.plmodules import get_scheduler_func, BasicSegmentationModule
 from apriorics.data import SegmentationDataset
@@ -14,10 +15,11 @@ import pandas as pd
 from torchmetrics import JaccardIndex, Precision, Recall, Specificity, Accuracy
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import CometLogger
 import os
 import torch
+from torch.utils.data import DataLoader
 from timm import create_model
+
 
 parser = ArgumentParser()
 parser.add_argument("--model")
@@ -41,7 +43,7 @@ parser.add_argument("--maskfolder", type=Path)
 parser.add_argument("--stain-matrices-folder", type=Path)
 parser.add_argument("--split-csv", type=Path)
 parser.add_argument("--logfolder", type=Path)
-parser.add_argument("--gpus", type=int)
+parser.add_argument("--gpus", type=int, default=1)
 parser.add_argument("--batch-size", type=int, default=8)
 parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--wd", type=float, default=1e-2)
@@ -60,11 +62,11 @@ parser.add_argument("--resume-version")
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    mask_paths = get_files(args.maskfolder, extensions=".tif", recurse=False).sorted(
-        key=lambda x: x.stem
-    )
-    patches_paths = mask_paths.map(
-        lambda x: args.patch_csv_folder / x.with_suffix(".csv").name
+    patches_paths = get_files(
+        args.patch_csv_folder, extensions=".csv", recurse=False
+    ).sorted(key=lambda x: x.stem)
+    mask_paths = patches_paths.map(
+        lambda x: args.maskfolder / x.with_suffix(".tif").name
     )
     slide_paths = mask_paths.map(
         lambda x: args.slidefolder / x.with_suffix(".svs").name

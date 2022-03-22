@@ -1,4 +1,4 @@
-import horovod.torch
+import horovod.torch as hvd
 from argparse import ArgumentParser
 from math import ceil
 from pathlib import Path
@@ -165,8 +165,9 @@ if __name__ == "__main__":
         auto_metric_logging=False,
     )
 
-    logger.experiment.add_tag(args.ihc_type)
-    logger.log_graph(plmodule)
+    if hvd.rank() == 0:
+        logger.experiment.add_tag(args.ihc_type)
+        logger.log_graph(plmodule)
 
     ckpt_callback = ModelCheckpoint(
         save_top_k=3,

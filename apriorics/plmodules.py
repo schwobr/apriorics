@@ -115,7 +115,7 @@ class BasicSegmentationModule(pl.LightningModule):
         self.log(f"val_loss_{get_loss_name(self.loss)}", loss, sync_dist=True)
 
         y_hat = torch.sigmoid(y_hat)
-        if batch_idx % 100 == 0:
+        if batch_idx % 100 == 0 and self.trainer.training_type_plugin.global_rank == 0:
             self.log_images(x, y, y_hat, batch_idx)
 
         self.metrics(y_hat, y.int())

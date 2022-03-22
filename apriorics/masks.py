@@ -1,7 +1,7 @@
 from multiprocessing import Array
 from typing import Callable, Optional, Union
 from skimage.filters import threshold_otsu
-from skimage.color import rgb2hed
+from skimage.color import rgb2hed, rgb2hsv
 from skimage.morphology import (
     remove_small_holes,
     remove_small_objects,
@@ -12,6 +12,32 @@ from skimage.morphology import (
 import numpy as np
 from pathaia.util.types import NDImage, NDByteGrayImage, NDBoolMask
 from PIL.Image import Image
+from scipy import ndimage as ndi
+
+
+def remove_large_objects(ar, max_size=1000, connectivity=1):
+    out = ar.copy()
+
+    if out.dtype == bool:
+        footprint = ndi.generate_binary_structure(ar.ndim, connectivity)
+        ccs = np.zeros_like(ar, dtype=np.int32)
+        ndi.label(ar, footprint, output=ccs)
+    else:
+        ccs = out
+
+    try:
+        component_sizes = np.bincount(ccs.ravel())
+    except ValueError:
+        raise ValueError(
+            "Negative value labels are not supported. Try "
+            "relabeling the input with `scipy.ndimage.label` or "
+            "`skimage.morphology.label`."
+        )
+
+    too_large = component_sizes > max_size
+    too_large_mask = too_large[ccs]
+    out[too_large_mask] = 0
+    return out
 
 
 def get_tissue_mask(img_G: NDByteGrayImage, blacktol: int = 0, whitetol: int = 247):
@@ -136,12 +162,16 @@ def get_mask_PHH3(he: Union[Image, NDImage], ihc: Union[Image, NDImage]) -> NDBo
     Returns:
         Intersection of H&E and IHC masks.
     """
-    he_H = rgb2hed(np.asarray(he))
+    he = np.asarray(he)
+    he_H = rgb2hed(he)
     he_DAB = he_H[:, :, 2]
     he_H = he_H[:, :, 0]
+    he_hue = rgb2hsv(he)[:, :, 0]
     ihc_DAB = rgb2hed(np.asarray(ihc))[:, :, 2]
     mask_he = remove_small_objects(
-        remove_small_holes((he_H > 0.07) & (he_H < 0.14), area_threshold=50),
+        remove_small_holes(
+            (he_H > 0.06) & (he_H < 0.14) & (he_hue > 0.69), area_threshold=50
+        ),
         min_size=50,
     )
     mask_ihc = remove_small_objects(
@@ -152,7 +182,10 @@ def get_mask_PHH3(he: Union[Image, NDImage], ihc: Union[Image, NDImage]) -> NDBo
         remove_small_holes(he_DAB > 0.04, area_threshold=50), min_size=50
     )
 
-    mask = remove_small_objects(mask_he & mask_ihc & ~mask_he_DAB, min_size=100)
+    mask = remove_large_objects(
+        remove_small_objects(mask_he & mask_ihc & ~mask_he_DAB, min_size=50),
+        max_size=1000,
+    )
     return mask
 
 
@@ -192,12 +225,7 @@ def update_full_mask(
 
 
 def update_full_mask_mp(
-    full_mask: Array,
-    mask: NDBoolMask,
-    x: int,
-    y: int,
-    h: int,
-    w: int
+    full_mask: Array, mask: NDBoolMask, x: int, y: int, w: int, h: int
 ):
     r"""
     Update a portion of a large mask using a smaller mask.
@@ -212,7 +240,7 @@ def update_full_mask_mp(
     dy = min(h, y + p_h) - y
     dx = min(w, x + p_w) - x
     for i in range(y, y + dy):
-        full_mask[i * w + x : i * w + x + dx] = mask[i-y, :dx]
+        full_mask[i * w + x : i * w + x + dx] = mask[i - y, :dx]
 
 
 def mask_to_bbox(mask: NDBoolMask, pad: int = 5):

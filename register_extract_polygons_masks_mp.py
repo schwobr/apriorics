@@ -10,7 +10,6 @@ import numpy as np
 from pathaia.util.types import Patch
 from shapely.affinity import translate
 from shapely.ops import unary_union
-import shutil
 from apriorics.registration import (
     full_registration,
     get_coord_transform,
@@ -20,7 +19,6 @@ from apriorics.polygons import mask_to_polygons_layer
 from ordered_set import OrderedSet
 from multiprocessing import Pool, Array
 from ctypes import c_bool
-from subprocess import PIPE
 
 
 IHC_MAPPING = {
@@ -152,7 +150,7 @@ if __name__ == "__main__":
             def coord_tfm(x, y):
                 return Coord(x, y)
 
-        full_mask = Array(c_bool, [False for _ in range(h * w)])
+        full_mask = Array(c_bool, h * w)
 
         def register_extract_mask(patch_he):
             patch_ihc = Patch(
@@ -164,30 +162,35 @@ if __name__ == "__main__":
                 size_0=patch_he.size_0,
             )
 
+            base_path = args.tmpfolder / str(os.getpid())
+            if not base_path.exists():
+                base_path.mkdir()
+
             restart = True
             iterations = 5000
             count = 0
             maxiter = 4
 
             while restart and count < maxiter:
-                restart = not full_registration(
-                    slide_he,
-                    slide_ihc,
-                    patch_he,
-                    patch_ihc,
-                    args.tmpfolder / os.getpid(),
-                    dab_thr=args.dab_thr,
-                    object_min_size=args.object_min_size,
-                    iterations=iterations,
-                    threads=1,
-                    stdout=PIPE,
-                    stderr=PIPE
-                )
+                with open(base_path / "log", "w") as f:
+                    restart = not full_registration(
+                        slide_he,
+                        slide_ihc,
+                        patch_he,
+                        patch_ihc,
+                        base_path,
+                        dab_thr=args.dab_thr,
+                        object_min_size=args.object_min_size,
+                        iterations=iterations,
+                        threads=1,
+                        stdout=f,
+                        stderr=f,
+                    )
                 if restart:
                     break
                 else:
                     ihc = (
-                        Image.open(args.tmpfolder / "ihc_warped.png")
+                        Image.open(base_path / "ihc_warped.png")
                         .convert("RGB")
                         .crop(box)
                     )
@@ -202,7 +205,9 @@ if __name__ == "__main__":
             if restart:
                 return
 
-            he = Image.open(args.tmpfolder / "he.png")
+            print(f"[{os.getpid()}] Computing mask...")
+
+            he = Image.open(base_path / "he.png")
             he = np.asarray(he.convert("RGB").crop(box))
             mask = get_mask_function(ihc_type)(he, np.asarray(ihc))
             update_full_mask_mp(
@@ -211,6 +216,14 @@ if __name__ == "__main__":
             polygons = mask_to_polygons_layer(mask)
             x, y = patch_he.position
             moved_polygons = translate(polygons, x + crop, y + crop)
+
+            print(f"[{os.getpid()}] Mask done.")
+
+            rm_cmd = (
+                f"docker run -v {args.tmpfolder}:/data historeg rm -rf "
+                f"/data/{os.getpid()}"
+            )
+            run(rm_cmd.split())
             return moved_polygons
 
         with Pool(processes=args.num_workers) as pool:
@@ -224,7 +237,7 @@ if __name__ == "__main__":
             )
             all_polygons = pool.map(register_extract_mask, patch_iter)
 
-        all_polygons = filter(lambda x: x is not None, all_polygons)
+        all_polygons = [x for x in all_polygons if x is not None]
         all_polygons = unary_union(all_polygons)
 
         print("Saving full polygons...")
@@ -237,7 +250,8 @@ if __name__ == "__main__":
         print("Saving mask...")
 
         maskpath = args.maskfolder / f"{hefile.stem}.png"
-        Image.fromarray(full_mask).save(maskpath)
+        full_mask_np = np.frombuffer(full_mask.get_obj(), dtype=bool).reshape(h, w)
+        Image.fromarray(full_mask_np).save(maskpath)
         if not args.novips:
             vips_cmd = (
                 f"vips tiffsave {maskpath} {maskpath.with_suffix('.tif')} "
@@ -250,5 +264,3 @@ if __name__ == "__main__":
             maskpath.unlink()
 
         print("Mask saved.")
-
-    shutil.rmtree(args.tmpfolder)

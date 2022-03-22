@@ -1,5 +1,6 @@
 from numbers import Number
 from os import PathLike
+import os
 from skimage.color import rgb2hed
 import cv2
 from skimage.util import img_as_ubyte, img_as_float
@@ -489,7 +490,7 @@ def register(
     )
     greedy_cmd = (
         f"docker run -v {base_path}:/data historeg "
-        f"greedy -d 2 --threads {threads} -rf {he_path} -rm {ihc_path} {reg_path} -r "
+        f"greedy -d 2 -threads {threads} -rf {he_path} -rm {ihc_path} {reg_path} -r "
         f"{tfm_path/'big_warp.nii.gz'} {tfm_path/'Affine.mat'}"
     )
     run(greedy_cmd.split(), **run_kwargs)
@@ -531,7 +532,11 @@ def full_registration(
     Return:
         True if registration was sucesfully performed, False otherwise.
     """
-    print(f"HE: {patch_he.position} / IHC: {patch_ihc.position}")
+    print(f"[{os.getpid()}] HE: {patch_he.position} / IHC: {patch_ihc.position}")
+
+    if not base_path.exists():
+        base_path.mkdir()
+
     he_H_path = base_path / "he_H.png"
     ihc_H_path = base_path / "ihc_H.png"
     he_path = base_path / "he.png"
@@ -545,13 +550,13 @@ def full_registration(
         has_enough_tissue(he_G, whitetol=247, area_thr=0.2)
         and has_enough_tissue(ihc_G, whitetol=247, area_thr=0.05)
     ):
-        print("Patch doesn't contain enough tissue, skipping.")
+        print(f"[{os.getpid()}] Patch doesn't contain enough tissue, skipping.")
         return False
 
     mask = get_dab_mask(ihc, dab_thr=dab_thr, object_min_size=object_min_size)
 
     if mask.sum() < object_min_size:
-        print("Mask would be empty, skipping.")
+        print(f"[{os.getpid()}] Mask would be empty, skipping.")
         return False
 
     # he_H, ihc_H = equalize_contrasts(he_H, ihc_H, he_G, ihc_G)
@@ -564,7 +569,7 @@ def full_registration(
     convert_to_nifti(he_path, **run_kwargs)
     convert_to_nifti(ihc_path, **run_kwargs)
 
-    print("Starting registration...")
+    print(f"[{os.getpid()}] Starting registration...")
 
     resample = int(100000 / patch_he.size[0])
 
@@ -581,6 +586,6 @@ def full_registration(
         **run_kwargs
     )
 
-    print("Registration done...")
+    print(f"[{os.getpid()}] Registration done...")
 
     return True

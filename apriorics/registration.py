@@ -286,7 +286,7 @@ def get_centroid(slide, thumb_size):
     ii, jj = get_tissue_mask(
         np.asarray(slide.get_thumbnail(thumb_size).convert("L"))
     ).nonzero()
-    centroid = (int(jj.mean()), int(ii.mean()))
+    centroid = (int(np.median(jj)), int(np.median(ii)))
     return centroid
 
 

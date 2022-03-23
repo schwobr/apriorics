@@ -19,6 +19,7 @@ from apriorics.polygons import mask_to_polygons_layer
 from ordered_set import OrderedSet
 from multiprocessing import Pool, Array
 from ctypes import c_bool
+import docker
 
 
 IHC_MAPPING = {
@@ -103,7 +104,6 @@ parser.add_argument(
 )
 parser.add_argument(
     "--ihc-type",
-    type=int,
     choices=IHC_MAPPING.keys(),
     help=(
         "Name of the IHC to extract masks from. Must be one of "
@@ -237,20 +237,17 @@ if __name__ == "__main__":
             maxiter = 4
 
             while restart and count < maxiter:
-                with open(base_path / "log", "w") as f:
-                    restart = not full_registration(
-                        slide_he,
-                        slide_ihc,
-                        patch_he,
-                        patch_ihc,
-                        base_path,
-                        dab_thr=args.dab_thr,
-                        object_min_size=args.object_min_size,
-                        iterations=iterations,
-                        threads=1,
-                        stdout=f,
-                        stderr=f,
-                    )
+                restart = not full_registration(
+                    slide_he,
+                    slide_ihc,
+                    patch_he,
+                    patch_ihc,
+                    base_path,
+                    dab_thr=args.dab_thr,
+                    object_min_size=args.object_min_size,
+                    iterations=iterations,
+                    threads=1,
+                )
                 if restart:
                     break
                 else:
@@ -283,12 +280,6 @@ if __name__ == "__main__":
             moved_polygons = translate(polygons, x + crop, y + crop)
 
             print(f"[{os.getpid()}] Mask done.")
-
-            rm_cmd = (
-                f"docker run -v {args.tmpfolder}:/data historeg rm -rf "
-                f"/data/{os.getpid()}"
-            )
-            run(rm_cmd.split())
             return moved_polygons
 
         with Pool(processes=args.num_workers) as pool:
@@ -329,3 +320,10 @@ if __name__ == "__main__":
             maskpath.unlink()
 
         print("Mask saved.")
+
+        client = docker.from_env()
+        client.containers.run(
+            "historeg",
+            f"rm -rf /data/{args.tmpfolder.name}",
+            volumes=[f"{args.tmpfolder.parent}:/data"],
+        )

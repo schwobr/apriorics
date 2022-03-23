@@ -12,7 +12,6 @@ from skimage.morphology import (
     binary_dilation,
 )
 from skimage.measure import label
-from subprocess import run
 from pathlib import Path
 from skimage.io import imsave
 from pathaia.util.types import Coord
@@ -20,6 +19,7 @@ from apriorics.masks import get_dab_mask, get_tissue_mask
 from pathaia.util.types import Slide, NDBoolMask, Patch, NDByteGrayImage, NDByteImage
 from nptyping import NDArray
 from typing import Any, Callable, List, Sequence, Tuple, Union
+import docker
 
 
 def get_dot_mask(
@@ -428,7 +428,7 @@ def equalize_contrasts(
     return img_as_ubyte(he_H), img_as_ubyte(ihc_H)
 
 
-def convert_to_nifti(path: PathLike, **run_kwargs):
+def convert_to_nifti(base_path: PathLike, path: PathLike, container=None):
     r"""
     Runs c2d on the input image to turn into
     `HistoReg <https://github.com/CBICA/HistoReg>`_ compatible nifti.
@@ -437,14 +437,31 @@ def convert_to_nifti(path: PathLike, **run_kwargs):
         path: path to input image file.
     """
     path = Path(path)
-    base_dir = path.parent
-    path = Path(f"/data/inputs/{path.name}")
+    path = Path(f"/data/{path.relative_to(base_path)}")
+
+    if container is None:
+        client = docker.from_env()
+        container = client.containers.create(
+            "historeg",
+            "/bin/bash",
+            tty=True,
+            stdin_open=True,
+            auto_remove=False,
+            volumes=[f"{base_path}:/data"],
+        )
+        container.start()
     c2d_cmd = (
-        f"docker run -v {base_dir}:/data/inputs historeg "
         f"c2d -mcs {path} -foreach -orient LP -spacing 1x1mm -origin 0x0mm -endfor -omc"
         f" {path.with_suffix('.nii.gz')}"
     )
-    run(c2d_cmd.split(), **run_kwargs)
+    with open(base_path / "log", "ab") as f:
+        # f.write(f"{datetime.now()} - converting {path.name} to nifti...\n")
+        res = container.exec_run(c2d_cmd, stream=True)
+        for chunk in res.output:
+            f.write(chunk)
+        # f.write(f"{datetime.now()} - conversion finished.\n")
+
+    return container
 
 
 def register(
@@ -454,10 +471,10 @@ def register(
     he_path: PathLike,
     ihc_path: PathLike,
     reg_path: PathLike,
+    container=None,
     iterations: int = 20000,
     resample: int = 4,
     threads=0,
-    **run_kwargs
 ):
     r"""
     Registers IHC H image into H&E H image using
@@ -477,30 +494,56 @@ def register(
         lambda x: Path("/data") / x.relative_to(base_path),
         (he_H_path, ihc_H_path, he_path, ihc_path, reg_path),
     )
-    historeg_cmd = (
-        f"docker run -v {base_path}:/data historeg "
-        f"HistoReg -i {iterations} -r {resample} -s1 6 -s2 8 --threads {threads} -f "
-        f"{he_H_path} -m {ihc_H_path} -o /data/historeg"
-    )
-    run(historeg_cmd.split(), **run_kwargs)
 
-    tfm_path = Path(
-        f"/data/historeg/{ihc_H_path.stem}_registered_to_{he_H_path.stem}"
-        "/metrics/full_resolution"
-    )
-    greedy_cmd = (
-        f"docker run -v {base_path}:/data historeg "
-        f"greedy -d 2 -threads {threads} -rf {he_path} -rm {ihc_path} {reg_path} -r "
-        f"{tfm_path/'big_warp.nii.gz'} {tfm_path/'Affine.mat'}"
-    )
-    run(greedy_cmd.split(), **run_kwargs)
+    if container is None:
+        client = docker.from_env()
+        container = client.containers.create(
+            "historeg",
+            "/bin/bash",
+            tty=True,
+            stdin_open=True,
+            auto_remove=False,
+            volumes=[f"{base_path}:/data"],
+        )
+        container.start()
 
-    c2d_cmd = (
-        f"docker run -v {base_path}:/data historeg "
-        f"c2d -mcs {reg_path} -foreach -type uchar -endfor -omc "
-        f"{reg_path.with_suffix('').with_suffix('.png')}"
-    )
-    run(c2d_cmd.split(), **run_kwargs)
+    with open(base_path / "log", "ab") as f:
+        historeg_cmd = (
+            f"HistoReg -i {iterations} -r {resample} -s1 6 -s2 8 --threads {threads} -f"
+            f" {he_H_path} -m {ihc_H_path} -o /data/historeg"
+        )
+        # f.write(f"{datetime.now()} - Starting HistoReg...\n")
+        res = container.exec_run(historeg_cmd, stream=True)
+        for chunk in res.output:
+            f.write(chunk)
+        # f.write(f"{datetime.now()} - HistoReg finished.\n")
+
+        tfm_path = Path(
+            f"/data/historeg/{ihc_H_path.stem}_registered_to_{he_H_path.stem}"
+            "/metrics/full_resolution"
+        )
+        greedy_cmd = (
+            f"greedy -d 2 -threads {threads} -rf {he_path} -rm {ihc_path} {reg_path} -r"
+            f" {tfm_path/'big_warp.nii.gz'} {tfm_path/'Affine.mat'}"
+        )
+        # f.write(f"{datetime.now()} - Starting Greedy...\n")
+        res = container.exec_run(greedy_cmd, stream=True)
+        for chunk in res.output:
+            f.write(chunk)
+        # f.write(f"{datetime.now()} - Greedy finished.\n")
+
+        c2d_cmd = (
+            f"docker run -v {base_path}:/data historeg "
+            f"c2d -mcs {reg_path} -foreach -type uchar -endfor -omc "
+            f"{reg_path.with_suffix('').with_suffix('.png')}"
+        )
+        # f.write(f"{datetime.now()} - Starting c2d...\n")
+        res = container.exec_run(c2d_cmd, stream=True)
+        for chunk in res.output:
+            f.write(chunk)
+        # f.write(f"{datetime.now()} - c2d finished.\n")
+
+    return container
 
 
 def full_registration(
@@ -513,7 +556,6 @@ def full_registration(
     object_min_size: int = 1000,
     iterations: int = 20000,
     threads=0,
-    **run_kwargs
 ) -> bool:
     r"""
     Perform full registration process on patches from an IHC slide and a H&E slide.
@@ -566,25 +608,28 @@ def full_registration(
 
     imsave(he_path, he)
     imsave(ihc_path, ihc)
-    convert_to_nifti(he_path, **run_kwargs)
-    convert_to_nifti(ihc_path, **run_kwargs)
+    container = convert_to_nifti(base_path, he_path)
+    container = convert_to_nifti(base_path, ihc_path, container=container)
 
     print(f"[{os.getpid()}] Starting registration...")
 
     resample = int(100000 / patch_he.size[0])
 
-    register(
+    container = register(
         base_path,
         he_H_path,
         ihc_H_path,
         he_path.with_suffix(".nii.gz"),
         ihc_path.with_suffix(".nii.gz"),
         reg_path.with_suffix(".nii.gz"),
+        container=container,
         resample=resample,
         iterations=iterations,
         threads=threads,
-        **run_kwargs
     )
+
+    container.stop()
+    container.remove()
 
     print(f"[{os.getpid()}] Registration done...")
 

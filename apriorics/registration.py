@@ -533,7 +533,6 @@ def register(
         # f.write(f"{datetime.now()} - Greedy finished.\n")
 
         c2d_cmd = (
-            f"docker run -v {base_path}:/data historeg "
             f"c2d -mcs {reg_path} -foreach -type uchar -endfor -omc "
             f"{reg_path.with_suffix('').with_suffix('.png')}"
         )

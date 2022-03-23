@@ -149,6 +149,7 @@ parser.add_argument(
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    hvd.init()
 
     patches_paths = get_files(
         args.patch_csv_folder, extensions=".csv", recurse=False

@@ -6,11 +6,24 @@ from csv import DictReader
 import numpy as np
 from staintools.stain_extraction.vahadane_stain_extractor import VahadaneStainExtractor
 
-parser = ArgumentParser()
-parser.add_argument("--patch-csv-folder", type=Path)
-parser.add_argument("--slidefolder", type=Path)
-parser.add_argument("--recurse", action="store_true")
-parser.add_argument("--outfolder", type=Path)
+parser = ArgumentParser(
+    prog=(
+        "Compute Vahadane stain matrices as npy files for input slides using PathAIA "
+        "patch csvs."
+    )
+)
+parser.add_argument(
+    "--patch-csv-folder", type=Path, help="Input folder containing PathAIA patch csvs."
+)
+parser.add_argument(
+    "--slidefolder", type=Path, help="Input folder containing svs slide files."
+)
+parser.add_argument(
+    "--recurse",
+    action="store_true",
+    help="Specify to recurse through slidefolder when looking for svs files. Optional.",
+)
+parser.add_argument("--outfolder", type=Path, help="Target output folder.")
 
 if __name__ == "__main__":
     args = parser.parse_args()

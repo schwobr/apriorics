@@ -22,55 +22,126 @@ from ctypes import c_bool
 
 
 IHC_MAPPING = {
-    13: "AE1AE3",
-    14: "CD163",
-    15: "CD3CD20",
-    16: "EMD",
-    17: "ERGCaldesmone",
-    18: "ERGPodoplanine",
-    19: "INI1",
-    20: "P40ColIV",
-    21: "PHH3",
+    "AE1AE3": 13,
+    "CD163": 14,
+    "CD3CD20": 15,
+    "EMD": 16,
+    "ERGCaldesmone": 17,
+    "ERGPodoplanine": 18,
+    "INI1": 19,
+    "P40ColIV": 20,
+    "PHH3": 21,
 }
 
 
-parser = ArgumentParser(prog="Upload image example")
-parser.add_argument("--dab-thr", type=float, default=0.03)
-parser.add_argument("--object-min-size", type=int, default=1000)
-parser.add_argument(
-    "--binary-op", default="closing", choices=["None", "closing", "dilation"]
+parser = ArgumentParser(
+    prog=(
+        "Registers IHC slides to corresponding H&E slides using HistoReg and extracts"
+        " masks by thresholding DAB on IHC."
+    )
 )
 parser.add_argument(
-    "--radius", default=10, type=int, help="radius for binary operations"
+    "--dab-thr",
+    type=float,
+    default=0.03,
+    help=(
+        "Threshold to use for basic DAB thresholding. Only purpose is to skip "
+        "registration for some patches when not enough DAB is present. Default 0.03."
+    ),
 )
-parser.add_argument("--psize", type=int, default=5000)
-parser.add_argument("--overlap", type=float, default=0.3)
-parser.add_argument("--crop", type=float, default=0.1)
-parser.add_argument("--box", type=int, nargs="*")
-parser.add_argument("--slidefolder", type=Path)
-parser.add_argument("--ihc-id", type=int)
-parser.add_argument("--slidefile", type=Path)
-parser.add_argument("--tmpfolder", type=Path, default=Path("/tmp/cyto_annotations"))
-parser.add_argument("--maskfolder", type=Path)
-parser.add_argument("--wktfolder", type=Path)
-parser.add_argument("--novips", action="store_true")
-parser.add_argument("--num-workers", type=int)
-parser.add_argument("-v", "--verbose", action="count")
-
-
-def get_box_filter(slide, box):
-    h = slide.shape[0]
-    box[1] = h - box[1]
-    box[3] = h - box[3]
-
-    def _filter(thumb):
-        dsr = h / thumb.shape[0]
-        x0, y0, x1, y1 = map(lambda x: int(x / dsr), box)
-        mask = np.zeros(thumb.shape[:2], dtype=bool)
-        mask[y0:y1, x0:x1] = True
-        return mask
-
-    return _filter
+parser.add_argument(
+    "--object-min-size",
+    type=int,
+    default=1000,
+    help=(
+        "Minimum object size (in pixels) to keep on mask. Only purpose is to skip "
+        "registration for some patches when not enough DAB is present. Default 1000."
+    ),
+)
+parser.add_argument(
+    "--binary-op",
+    default="closing",
+    choices=["none", "closing", "dilation"],
+    help=(
+        "Scikit-image binary operation to use on mask. Only purpose is to skip "
+        "registration for some patches when not enough DAB is present. Must be one of "
+        "closing, dilation, none. Default closing."
+    ),
+)
+parser.add_argument(
+    "--radius",
+    default=10,
+    type=int,
+    help="Radius of the disk to use as footprint for binary operation. Default 10.",
+)
+parser.add_argument(
+    "--psize",
+    type=int,
+    default=5000,
+    help=(
+        "Size of the patches that are used for registration and mask extraction. "
+        "Default 5000."
+    ),
+)
+parser.add_argument(
+    "--overlap",
+    type=float,
+    default=0.3,
+    help="Part of the patches that should overlap. Default 0.3.",
+)
+parser.add_argument(
+    "--crop",
+    type=float,
+    default=0.1,
+    help=(
+        "Part of the patches to crop for mask extraction (to avoid registration "
+        "artifacts). Default 0.1."
+    ),
+)
+parser.add_argument(
+    "--slidefolder", type=Path, help="Input folder that contains input svs slide files."
+)
+parser.add_argument(
+    "--ihc-type",
+    type=int,
+    choices=IHC_MAPPING.keys(),
+    help=(
+        "Name of the IHC to extract masks from. Must be one of "
+        f"{', '.join(IHC_MAPPING.keys())}."
+    ),
+)
+parser.add_argument(
+    "--slidefile",
+    type=Path,
+    help=(
+        "Input txt file that contains the names of the H&E slides to register and "
+        "extract masks from. Optional."
+    ),
+)
+parser.add_argument(
+    "--tmpfolder",
+    type=Path,
+    default=Path("/tmp/cyto_annotations"),
+    help=(
+        "Path to the temporary folder that will be used for computation. Default "
+        "/tmp/cyto_annotations."
+    ),
+)
+parser.add_argument("--maskfolder", type=Path, help="Output mask folder.")
+parser.add_argument("--wktfolder", type=Path, help="Output wkt folder.")
+parser.add_argument(
+    "--novips",
+    action="store_true",
+    help=(
+        "Specify to avoid converting masks from png to pyramidal tiled tif. Useful "
+        "when vips is not installed. Optional."
+    ),
+)
+parser.add_argument(
+    "--num-workers",
+    type=int,
+    help="Number of workers to use for processing. Defaults to all available workers.",
+)
 
 
 def get_filefilter(slidefile):
@@ -106,8 +177,8 @@ if __name__ == "__main__":
     crop = int(args.crop * args.psize)
     box = (crop, crop, args.psize - crop, args.psize - crop)
 
-    k = (args.ihc_id - 1) % 12 + 1
-    ihc_type = IHC_MAPPING[k + 12]
+    ihc_id = IHC_MAPPING[args.ihc_type]
+    k = (ihc_id - 1) % 12 + 1
 
     hefiles = get_files(args.slidefolder, extensions=[".svs"], recurse=False).filter(
         lambda x: int(x.stem.split("-")[-1].split("_")[0]) == k
@@ -134,12 +205,6 @@ if __name__ == "__main__":
         slide_he = Slide(hefile, backend="cucim")
         slide_ihc = Slide(ihcfile, backend="cucim")
         w, h = slide_he.dimensions
-
-        if args.box is not None:
-            assert len(args.box) == 4
-            slide_filter = get_box_filter(slide_he, args.box)
-        else:
-            slide_filter = None
 
         interval = -int(args.overlap * args.psize)
 
@@ -209,7 +274,7 @@ if __name__ == "__main__":
 
             he = Image.open(base_path / "he.png")
             he = np.asarray(he.convert("RGB").crop(box))
-            mask = get_mask_function(ihc_type)(he, np.asarray(ihc))
+            mask = get_mask_function(args.ihc_type)(he, np.asarray(ihc))
             update_full_mask_mp(
                 full_mask, mask, *(patch_he.position + crop), *slide_he.dimensions
             )

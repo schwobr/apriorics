@@ -7,12 +7,31 @@ import pandas as pd
 import re
 
 
-parser = ArgumentParser()
-parser.add_argument("--maskfolder", type=Path)
-parser.add_argument("--out-csv", type=Path)
-parser.add_argument("--recurse", action="store_true")
-parser.add_argument("--train-ratio", type=float, default=0.8)
-parser.add_argument("--file-filter")
+parser = ArgumentParser(prog="Splits a dataset between train and validation slides. ")
+parser.add_argument(
+    "--maskfolder", type=Path, help="Input folder containing mask tif files."
+)
+parser.add_argument(
+    "--out-csv", type=Path, help="Output csv containing 2 columns: slide and split."
+)
+parser.add_argument(
+    "--recurse",
+    action="store_true",
+    help="Specify to recurse through slidefolder when looking for svs files. Optional.",
+)
+parser.add_argument(
+    "--train-ratio",
+    type=float,
+    default=0.8,
+    help="Part of the dataset to use for training. Default 0.8.",
+)
+parser.add_argument(
+    "--file-filter",
+    help=(
+        "Regex filter input svs files by names. To filter a specific ihc id x, should"
+        r' be "^21I\d{6}-\d-\d\d-x_\d{6}". Optional.'
+    ),
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()

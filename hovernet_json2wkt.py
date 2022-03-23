@@ -3,9 +3,9 @@ from pathaia.util.paths import get_files
 from argparse import ArgumentParser
 from pathlib import Path
 
-parser = ArgumentParser()
-parser.add_argument("--jsonfolder", type=Path)
-parser.add_argument("--wktfolder", type=Path)
+parser = ArgumentParser(prog="Converts json files outputted by hovernet to wkt.")
+parser.add_argument("--jsonfolder", type=Path, help="Input hovernet json folder.")
+parser.add_argument("--wktfolder", type=Path, help="Output wkt folder.")
 
 
 if __name__ == "__main__":
@@ -17,5 +17,5 @@ if __name__ == "__main__":
         args.wktfolder.mkdir()
 
     for jsonfile in jsonfiles:
-        wktfile = args.wktfolder/f"{jsonfile.stem}.wkt"
+        wktfile = args.wktfolder / f"{jsonfile.stem}.wkt"
         hovernet_to_wkt(jsonfile, wktfile)

@@ -20,44 +20,132 @@ import torch
 from torch.utils.data import DataLoader
 from timm import create_model
 
+IHCS = [
+    "AE1AE3",
+    "CD163",
+    "CD3CD20",
+    "EMD",
+    "ERGCaldes",
+    "ERGPodo",
+    "INI1",
+    "P40ColIV",
+    "PHH3",
+]
 
-parser = ArgumentParser()
-parser.add_argument("--model")
+parser = ArgumentParser(
+    prog=(
+        "Train a segmentation model for a specific IHC. Should be called as "
+        "horovodrun -np n_gpus python train_segmentation.py."
+    )
+)
+parser.add_argument(
+    "--model",
+    help=(
+        "Model to use for training. If unet, can be formatted as unet/encoder to "
+        "specify a specific encoder. Must be one of unet, med_t, logo, axalunet, gated."
+    ),
+)
 parser.add_argument(
     "--ihc-type",
-    choices=[
-        "AE1AE3",
-        "CD163",
-        "CD3CD20",
-        "EMD",
-        "ERGCaldes",
-        "ERGPodo",
-        "INI1",
-        "P40ColIV",
-        "PHH3",
-    ],
+    choices=IHCS,
+    help=f"Name of the IHC to train for. Must be one of {', '.join(IHCS)}.",
 )
-parser.add_argument("--patch-csv-folder", type=Path)
-parser.add_argument("--slidefolder", type=Path)
-parser.add_argument("--maskfolder", type=Path)
-parser.add_argument("--stain-matrices-folder", type=Path)
-parser.add_argument("--split-csv", type=Path)
-parser.add_argument("--logfolder", type=Path)
-parser.add_argument("--gpus", type=int, default=1)
-parser.add_argument("--batch-size", type=int, default=8)
-parser.add_argument("--lr", type=float, default=1e-3)
-parser.add_argument("--wd", type=float, default=1e-2)
-parser.add_argument("--epochs", type=int, default=10)
-parser.add_argument("--patch-size", type=int, default=1024)
-parser.add_argument("--num-workers", type=int, default=0)
-parser.add_argument("--freeze-encoder", action="store_true")
-parser.add_argument("--loss", default="bce")
-parser.add_argument("--group-norm", action="store_true")
 parser.add_argument(
-    "--scheduler", choices=["one-cycle", "cosine-anneal", "reduce-on-plateau"]
+    "--patch-csv-folder", type=Path, help="Input folder containing PathAIA csv files."
 )
-parser.add_argument("--grad-accumulation", type=int, default=1)
-parser.add_argument("--resume-version")
+parser.add_argument(
+    "--slidefolder", type=Path, help="Input folder containing svs slide files."
+)
+parser.add_argument(
+    "--maskfolder", type=Path, help="Input folder containing tif mask files."
+)
+parser.add_argument(
+    "--stain-matrices-folder",
+    type=Path,
+    help=(
+        "Input folder containing npy stain matrices files for stain augmentation. "
+        "Optional."
+    ),
+)
+parser.add_argument(
+    "--split-csv",
+    type=Path,
+    help="Input csv file for dataset split containing 2 columns: slide and split.",
+)
+parser.add_argument(
+    "--logfolder", type=Path, help="Output folder for pytorch lightning log files."
+)
+parser.add_argument(
+    "--gpus", type=int, default=1, help="Number of gpus to use. Default 1."
+)
+parser.add_argument(
+    "--batch-size",
+    type=int,
+    default=8,
+    help=(
+        "Batch size for training. effective batch size is multiplied by the number of"
+        " gpus. Default 8."
+    ),
+)
+parser.add_argument(
+    "--lr", type=float, default=1e-3, help="Learning rate for training. Default 1e-3."
+)
+parser.add_argument(
+    "--wd",
+    type=float,
+    default=1e-2,
+    help="Weight decay for AdamW optimizer. Default 1e-2.",
+)
+parser.add_argument(
+    "--epochs", type=int, default=10, help="Number of epochs to train on. Default 10."
+)
+parser.add_argument(
+    "--patch-size",
+    type=int,
+    default=1024,
+    help="Size of the patches used foor training. Default 1024.",
+)
+parser.add_argument(
+    "--num-workers",
+    type=int,
+    default=0,
+    help="Number of workers to use for data loading. Default 0 (only main process).",
+)
+parser.add_argument(
+    "--freeze-encoder",
+    action="store_true",
+    help="Specify to freeze encoder when using unet model. Optional.",
+)
+parser.add_argument(
+    "--loss",
+    default="bce",
+    help=(
+        "Loss function to use for training. Must be one of bce, focal, dice, "
+        "sum_loss1_coef1_****. Default bce."
+    ),
+)
+parser.add_argument(
+    "--group-norm",
+    action="store_true",
+    help="Specify to use group norm instead of batch norm in model. Optional.",
+)
+parser.add_argument(
+    "--scheduler",
+    choices=["one-cycle", "cosine-anneal", "reduce-on-plateau"],
+    help=(
+        "Learning rate scheduler to use during training. Must be one of one-cycle, "
+        "cosine-anneal, reduce-on-plateau. Optional."
+    ),
+)
+parser.add_argument(
+    "--grad-accumulation",
+    type=int,
+    default=1,
+    help="Number of batches to accumulate gradients on. Default 1.",
+)
+parser.add_argument(
+    "--resume-version", help="Version id of a model to load weights from. Optional."
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()

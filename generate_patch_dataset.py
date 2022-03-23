@@ -10,14 +10,46 @@ import numpy as np
 from skimage.transform import resize
 
 
-parser = ArgumentParser(prog="Generate the patch CSVs for slides")
-parser.add_argument("--input-folder", type=Path)
-parser.add_argument("--maskfolder", type=Path)
-parser.add_argument("--target-folder", type=Path)
-parser.add_argument("--recursive", "-r", action="store_true")
-parser.add_argument("--patch-size", type=int, default=1024)
-parser.add_argument("--file-filter")
-parser.add_argument("--level", type=int, default=0)
+parser = ArgumentParser(prog="Generates the PathAIA patch CSVs for slides.")
+parser.add_argument(
+    "--slidefolder", type=Path, help="Input folder containing slide svs files."
+)
+parser.add_argument(
+    "--maskfolder", type=Path, help="Input folder containing mask tif files."
+)
+parser.add_argument(
+    "--outfolder",
+    type=Path,
+    help=(
+        "Target output folder. Actual output folder will be "
+        "outfolder/{patch_size}_{level}/patch_csvs."
+    ),
+)
+parser.add_argument(
+    "--recurse",
+    "-r",
+    action="store_true",
+    help="Specify to recurse through slidefolder when looking for svs files. Optional.",
+)
+parser.add_argument(
+    "--patch-size",
+    type=int,
+    default=1024,
+    help="Size of the (square) patches to extract. Default 1024.",
+)
+parser.add_argument(
+    "--file-filter",
+    help=(
+        "Regex filter input svs files by names. To filter a specific ihc id x, should"
+        r' be "^21I\d{6}-\d-\d\d-x_\d{6}". Optional.'
+    ),
+)
+parser.add_argument(
+    "--level",
+    type=int,
+    default=0,
+    help="Pyramid level to extract patches on. Default 0.",
+)
 
 
 def get_mask_filter(mask, thumb_size=2000):
@@ -32,20 +64,18 @@ def get_mask_filter(mask, thumb_size=2000):
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    input_files = get_files(
-        args.input_folder, extensions=".svs", recurse=args.recursive
-    )
+    input_files = get_files(args.slidefolder, extensions=".svs", recurse=args.recurse)
     if args.file_filter is not None:
         filter_regex = re.compile(args.file_filter)
         input_files = filter(
             lambda x: filter_regex.match(x.name) is not None, input_files
         )
 
-    outfolder = args.target_folder / f"{args.patch_size}_{args.level}/patch_csvs"
+    outfolder = args.outfolder / f"{args.patch_size}_{args.level}/patch_csvs"
 
     for in_file_path in input_files:
         mask_path = args.maskfolder / in_file_path.relative_to(
-            args.input_folder
+            args.slidefolder
         ).with_suffix(".tif")
         if not mask_path.exists():
             continue
@@ -61,7 +91,7 @@ if __name__ == "__main__":
         )
 
         out_file_path = outfolder / in_file_path.relative_to(
-            args.input_folder
+            args.slidefolder
         ).with_suffix(".csv")
         if not out_file_path.parent.exists():
             out_file_path.parent.mkdir(parents=True)

@@ -5,7 +5,7 @@ from pathlib import Path
 from pytorch_lightning.loggers import CometLogger
 from apriorics.model_components.normalization import group_norm
 from apriorics.plmodules import get_scheduler_func, BasicSegmentationModule
-from apriorics.data import SegmentationDataset
+from apriorics.data import SegmentationDataset, BalancedRandomSampler
 from apriorics.transforms import ToTensor  # , StainAugmentor
 from apriorics.metrics import DiceScore
 from apriorics.losses import get_loss
@@ -19,6 +19,7 @@ import os
 import torch
 from torch.utils.data import DataLoader
 from timm import create_model
+from pytorch_lightning.utilities.seed import seed_everything
 
 IHCS = [
     "AE1AE3",
@@ -161,10 +162,20 @@ parser.add_argument(
 parser.add_argument(
     "--resume-version", help="Version id of a model to load weights from. Optional."
 )
+parser.add_argument(
+    "--seed",
+    type=int,
+    help=(
+        "Specify seed for RNG. Can also be set using PL_GLOBAL_SEED environment "
+        "variable. Optional."
+    ),
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()
     hvd.init()
+
+    seed_everything(workers=True)
 
     patches_paths = get_files(
         args.patch_csv_folder, extensions=".csv", recurse=False
@@ -205,6 +216,7 @@ if __name__ == "__main__":
         transforms=[ToTensor()],
     )
 
+    sampler = BalancedRandomSampler(train_ds, p_pos=0.95)
     train_dl = DataLoader(
         train_ds,
         batch_size=args.batch_size,
@@ -212,6 +224,7 @@ if __name__ == "__main__":
         pin_memory=True,
         num_workers=args.num_workers,
         drop_last=True,
+        sampler=sampler,
     )
     val_dl = DataLoader(
         val_ds,

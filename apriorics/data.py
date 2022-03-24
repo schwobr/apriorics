@@ -1,8 +1,8 @@
 from os import PathLike
-from typing import Sequence, Optional, Tuple, Union
+from typing import Iterator, List, Sequence, Optional, Tuple, Union
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, RandomSampler
 from pathaia.util.types import Slide, Patch
 from pathaia.util.basic import ifnone
 from albumentations import Compose, BasicTransform, BboxParams
@@ -48,6 +48,7 @@ class SegmentationDataset(Dataset):
         self.masks = []
         self.patches = []
         self.slide_idxs = []
+        self.n_pos = []
 
         for slide_idx, (patches_path, slide_path, mask_path) in enumerate(
             zip(patches_paths, slide_paths, mask_paths)
@@ -58,7 +59,10 @@ class SegmentationDataset(Dataset):
                 reader = csv.DictReader(patch_file)
                 for patch in reader:
                     self.patches.append(Patch.from_csv_row(patch))
+                    self.n_pos.append(patch["n_pos"])
                     self.slide_idxs.append(slide_idx)
+
+        self.n_pos = np.array(self.n_pos, dtype=np.uint64)
 
         if stain_matrices_paths is None:
             self.stain_matrices = None
@@ -136,6 +140,7 @@ class DetectionDataset(Dataset):
         self.masks = []
         self.patches = []
         self.slide_idxs = []
+        self.n_pos = []
 
         for slide_idx, (patches_path, slide_path, mask_path) in enumerate(
             zip(patches_paths, slide_paths, mask_paths)
@@ -146,7 +151,10 @@ class DetectionDataset(Dataset):
                 reader = csv.DictReader(patch_file)
                 for patch in reader:
                     self.patches.append(Patch.from_csv_row(patch))
+                    self.n_pos.append(patch["n_pos"])
                     self.slide_idxs.append(slide_idx)
+
+        self.n_pos = np.array(self.n_pos, dtype=np.uint64)
 
         if stain_matrices_paths is None:
             self.stain_matrices = None
@@ -193,3 +201,58 @@ class DetectionDataset(Dataset):
             "labels": torch.ones(bboxes.shape[0], dtype=torch.int64),
         }
         return transformed["image"], target
+
+
+class BalancedRandomSampler(RandomSampler):
+    def __init__(
+        self,
+        data_source: Dataset,
+        num_samples: Optional[int] = None,
+        replacement: bool = False,
+        generator: Optional[torch.Generator] = None,
+        p_pos: float = 0.5,
+    ):
+        super().__init__(
+            data_source,
+            replacement=replacement,
+            num_samples=num_samples,
+            generator=generator,
+        )
+        self.p_pos = p_pos
+
+    @property
+    def num_samples(self) -> int:
+        # dataset size might change at runtime
+        num_samples = super().num_samples
+        if self.replacement:
+            return num_samples
+        else:
+            n_pos = (self.data_source.n_pos > 0).sum()
+            max_avail = int(
+                self.p_pos * n_pos + (1 - self.p_pos) * (len(self.data_source) - n_pos)
+            )
+            return min(num_samples, max_avail)
+
+    def get_idxs(self) -> List[int]:
+        mask = self.data_source.n_pos == 0
+        avail = [mask.nonzero()[0].tolist(), (~mask).nonzero()[0].tolist()]
+        idxs = []
+        for _ in range(self.num_samples):
+            x = torch.rand(2, generator=self.generator)
+            cl = min(int(x[0] < self.p_pos), len(avail)-1)
+            cl_patches = avail[cl]
+            idx = int(x[1] * len(cl_patches))
+            if self.replacement:
+                patch = cl_patches[idx]
+            else:
+                patch = cl_patches.pop(idx)
+                if len(cl_patches) == 0:
+                    avail.pop(cl_patches)
+            idxs.append(patch)
+        return idxs
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(self.get_idxs())
+
+    def __len__(self) -> int:
+        return self.num_samples

@@ -298,6 +298,8 @@ if __name__ == "__main__":
                 slide_filters=["full"],
             )
             all_polygons = pool.map(register_extract_mask, patch_iter)
+            pool.close()
+            pool.join()
 
         all_polygons = [x for x in all_polygons if x is not None]
         all_polygons = unary_union(all_polygons)

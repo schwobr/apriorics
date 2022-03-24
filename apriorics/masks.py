@@ -1,5 +1,5 @@
 from multiprocessing import Array
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Union, List, Tuple
 from skimage.filters import threshold_otsu
 from skimage.color import rgb2hed, rgb2hsv
 from skimage.morphology import (
@@ -124,19 +124,25 @@ def get_mask_AE1AE3(
     Returns:
         Intersection of H&E and IHC masks.
     """
-    he_H = rgb2hed(np.asarray(he))
+    he = np.asarray(he)
+    he_H = rgb2hed(he)
     he_DAB = he_H[:, :, 2]
     he_H = he_H[:, :, 0]
-    ihc_DAB = rgb2hed(np.asarray(ihc))[:, :, 2]
+    he_hue = rgb2hsv(he)[:, :, 0]
+    ihc = np.asarray(ihc)
+    ihc_DAB = rgb2hed(ihc)[:, :, 2]
+    ihc_s = rgb2hsv(ihc)[:, :, 1]
     mask_he = binary_closing(
         remove_small_objects(
-            remove_small_holes(he_H > 0.005, area_threshold=1000), min_size=500
+            remove_small_holes((he_H > 0.005) & (he_hue > 0.69), area_threshold=1000),
+            min_size=500,
         ),
         footprint=disk(10),
     )
     mask_ihc = binary_closing(
         remove_small_objects(
-            remove_small_holes(ihc_DAB > 0.03, area_threshold=1000), min_size=500
+            remove_small_holes((ihc_DAB > 0.03) & (ihc_s > 0.1), area_threshold=1000),
+            min_size=500,
         ),
         footprint=disk(10),
     )
@@ -167,7 +173,9 @@ def get_mask_PHH3(he: Union[Image, NDImage], ihc: Union[Image, NDImage]) -> NDBo
     he_DAB = he_H[:, :, 2]
     he_H = he_H[:, :, 0]
     he_hue = rgb2hsv(he)[:, :, 0]
-    ihc_DAB = rgb2hed(np.asarray(ihc))[:, :, 2]
+    ihc = np.asarray(ihc)
+    ihc_DAB = rgb2hed(ihc)[:, :, 2]
+    ihc_s = rgb2hsv(ihc)[:, :, 1]
     mask_he = remove_small_objects(
         remove_small_holes(
             (he_H > 0.06) & (he_H < 0.14) & (he_hue > 0.69), area_threshold=50
@@ -175,7 +183,8 @@ def get_mask_PHH3(he: Union[Image, NDImage], ihc: Union[Image, NDImage]) -> NDBo
         min_size=50,
     )
     mask_ihc = remove_small_objects(
-        remove_small_holes(ihc_DAB > 0.04, area_threshold=50), min_size=50
+        remove_small_holes((ihc_DAB > 0.04) & (ihc_s > 0.1), area_threshold=50),
+        min_size=50,
     )
 
     mask_he_DAB = remove_small_objects(
@@ -243,6 +252,35 @@ def update_full_mask_mp(
         full_mask[i * w + x : i * w + x + dx] = mask[i - y, :dx]
 
 
+def merge_bboxes(
+    bboxes: List[List[int]], masks: List[NDBoolMask]
+) -> Tuple[List[List[int]], List[NDBoolMask]]:
+    n = len(bboxes)
+    for i in range(1, n):
+        for j in range(i):
+            if bboxes[j] is None:
+                continue
+            xi0, yi0, xi1, yi1 = bboxes[i]
+            xj0, yj0, xj1, yj1 = bboxes[j]
+
+            h = max(yi1, yj1) - min(yi0, yj0)
+            w = max(xi1, xj1) - min(xi0, xj0)
+            maski = np.zeros((h, w), dtype=bool)
+            maski[yi0:yi1, xi0:xi1] = 1
+            maskj = np.zeros((h, w), dtype=bool)
+            maskj[yj0:yj1, xj0:xj1] = 1
+
+            if (maski & maskj).sum():
+                bboxes[i] = [min(xi0, xj0), min(yi0, yj0), max(xi1, xj1), max(yi1, yj1)]
+                masks[i] = masks[i] | masks[j]
+
+                bboxes[j] = None
+                masks[j] = None
+    bboxes = [bbox for bbox in bboxes if bbox is not None]
+    masks = [mask for mask in masks if mask is not None]
+    return bboxes, masks
+
+
 def mask_to_bbox(mask: NDBoolMask, pad: int = 5):
     labels, n = label(mask, return_num=True)
     bboxes = []
@@ -255,4 +293,5 @@ def mask_to_bbox(mask: NDBoolMask, pad: int = 5):
         x0, x1 = jj.min(), jj.max()
         bboxes.append([x0 - pad, y0 - pad, x1 + pad, y1 + pad])
         masks.append(mask)
+    bboxes, masks = merge_bboxes(bboxes, masks)
     return np.array(bboxes, dtype=np.float32), np.stack(masks).astype(np.uint8)

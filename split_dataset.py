@@ -9,10 +9,16 @@ import re
 
 parser = ArgumentParser(prog="Splits a dataset between train and validation slides. ")
 parser.add_argument(
-    "--maskfolder", type=Path, help="Input folder containing mask tif files."
+    "--maskfolder",
+    type=Path,
+    help="Input folder containing mask tif files.",
+    required=True,
 )
 parser.add_argument(
-    "--out-csv", type=Path, help="Output csv containing 2 columns: slide and split."
+    "--out-csv",
+    type=Path,
+    help="Output csv containing 2 columns: slide and split.",
+    required=True,
 )
 parser.add_argument(
     "--recurse",

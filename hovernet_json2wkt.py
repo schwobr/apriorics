@@ -4,8 +4,10 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 parser = ArgumentParser(prog="Converts json files outputted by hovernet to wkt.")
-parser.add_argument("--jsonfolder", type=Path, help="Input hovernet json folder.")
-parser.add_argument("--wktfolder", type=Path, help="Output wkt folder.")
+parser.add_argument(
+    "--jsonfolder", type=Path, help="Input hovernet json folder.", required=True
+)
+parser.add_argument("--wktfolder", type=Path, help="Output wkt folder.", required=True)
 
 
 if __name__ == "__main__":

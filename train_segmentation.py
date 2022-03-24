@@ -44,20 +44,31 @@ parser.add_argument(
         "Model to use for training. If unet, can be formatted as unet/encoder to "
         "specify a specific encoder. Must be one of unet, med_t, logo, axalunet, gated."
     ),
+    required=True,
 )
 parser.add_argument(
     "--ihc-type",
     choices=IHCS,
     help=f"Name of the IHC to train for. Must be one of {', '.join(IHCS)}.",
+    required=True,
 )
 parser.add_argument(
-    "--patch-csv-folder", type=Path, help="Input folder containing PathAIA csv files."
+    "--patch-csv-folder",
+    type=Path,
+    help="Input folder containing PathAIA csv files.",
+    required=True,
 )
 parser.add_argument(
-    "--slidefolder", type=Path, help="Input folder containing svs slide files."
+    "--slidefolder",
+    type=Path,
+    help="Input folder containing svs slide files.",
+    required=True,
 )
 parser.add_argument(
-    "--maskfolder", type=Path, help="Input folder containing tif mask files."
+    "--maskfolder",
+    type=Path,
+    help="Input folder containing tif mask files.",
+    required=True,
 )
 parser.add_argument(
     "--stain-matrices-folder",
@@ -71,9 +82,13 @@ parser.add_argument(
     "--split-csv",
     type=Path,
     help="Input csv file for dataset split containing 2 columns: slide and split.",
+    required=True,
 )
 parser.add_argument(
-    "--logfolder", type=Path, help="Output folder for pytorch lightning log files."
+    "--logfolder",
+    type=Path,
+    help="Output folder for pytorch lightning log files.",
+    required=True,
 )
 parser.add_argument(
     "--gpus", type=int, default=1, help="Number of gpus to use. Default 1."

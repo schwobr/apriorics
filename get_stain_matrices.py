@@ -13,17 +13,25 @@ parser = ArgumentParser(
     )
 )
 parser.add_argument(
-    "--patch-csv-folder", type=Path, help="Input folder containing PathAIA patch csvs."
+    "--patch-csv-folder",
+    type=Path,
+    help="Input folder containing PathAIA patch csvs.",
+    required=True,
 )
 parser.add_argument(
-    "--slidefolder", type=Path, help="Input folder containing svs slide files."
+    "--slidefolder",
+    type=Path,
+    help="Input folder containing svs slide files.",
+    required=True,
 )
 parser.add_argument(
     "--recurse",
     action="store_true",
     help="Specify to recurse through slidefolder when looking for svs files. Optional.",
 )
-parser.add_argument("--outfolder", type=Path, help="Target output folder.")
+parser.add_argument(
+    "--outfolder", type=Path, help="Target output folder.", required=True
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()

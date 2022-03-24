@@ -100,7 +100,10 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
-    "--slidefolder", type=Path, help="Input folder that contains input svs slide files."
+    "--slidefolder",
+    type=Path,
+    help="Input folder that contains input svs slide files.",
+    required=True,
 )
 parser.add_argument(
     "--ihc-type",
@@ -109,6 +112,7 @@ parser.add_argument(
         "Name of the IHC to extract masks from. Must be one of "
         f"{', '.join(IHC_MAPPING.keys())}."
     ),
+    required=True,
 )
 parser.add_argument(
     "--slidefile",
@@ -121,14 +125,16 @@ parser.add_argument(
 parser.add_argument(
     "--tmpfolder",
     type=Path,
-    default=Path("/tmp/cyto_annotations"),
+    default=Path("/data/tmp/cyto_annotations"),
     help=(
         "Path to the temporary folder that will be used for computation. Default "
-        "/tmp/cyto_annotations."
+        "/data/tmp/cyto_annotations."
     ),
 )
-parser.add_argument("--maskfolder", type=Path, help="Output mask folder.")
-parser.add_argument("--wktfolder", type=Path, help="Output wkt folder.")
+parser.add_argument(
+    "--maskfolder", type=Path, help="Output mask folder.", required=True
+)
+parser.add_argument("--wktfolder", type=Path, help="Output wkt folder.", required=True)
 parser.add_argument(
     "--novips",
     action="store_true",
@@ -321,9 +327,9 @@ if __name__ == "__main__":
 
         print("Mask saved.")
 
-        client = docker.from_env()
-        client.containers.run(
-            "historeg",
-            f"rm -rf /data/{args.tmpfolder.name}",
-            volumes=[f"{args.tmpfolder.parent}:/data"],
-        )
+    client = docker.from_env()
+    client.containers.run(
+        "historeg",
+        f"rm -rf /data/{args.tmpfolder.name}",
+        volumes=[f"{args.tmpfolder.parent}:/data"],
+    )

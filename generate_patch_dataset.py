@@ -12,10 +12,16 @@ from skimage.transform import resize
 
 parser = ArgumentParser(prog="Generates the PathAIA patch CSVs for slides.")
 parser.add_argument(
-    "--slidefolder", type=Path, help="Input folder containing slide svs files."
+    "--slidefolder",
+    type=Path,
+    help="Input folder containing slide svs files.",
+    required=True,
 )
 parser.add_argument(
-    "--maskfolder", type=Path, help="Input folder containing mask tif files."
+    "--maskfolder",
+    type=Path,
+    help="Input folder containing mask tif files.",
+    required=True,
 )
 parser.add_argument(
     "--outfolder",
@@ -24,6 +30,7 @@ parser.add_argument(
         "Target output folder. Actual output folder will be "
         "outfolder/{patch_size}_{level}/patch_csvs."
     ),
+    required=True,
 )
 parser.add_argument(
     "--recurse",

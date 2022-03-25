@@ -5,7 +5,7 @@ from pathlib import Path
 from pytorch_lightning.loggers import CometLogger
 from apriorics.plmodules import get_scheduler_func, BasicDetectionModule
 from apriorics.data import DetectionDataset, BalancedRandomSampler
-from apriorics.transforms import ToTensor  # , StainAugmentor
+from apriorics.transforms import ToTensor, StainAugmentor
 from apriorics.metrics import DiceScore
 from albumentations import (
     RandomRotate90,
@@ -18,7 +18,7 @@ from albumentations import (
 from pathaia.util.paths import get_files
 import pandas as pd
 from torchmetrics import JaccardIndex, Precision, Recall, Specificity, Accuracy
-from torchmetrics.detection.map import MAP
+from torchmetrics.detection.map import MeanAveragePrecision
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 import os
@@ -155,6 +155,11 @@ parser.add_argument(
         "variable. Optional."
     ),
 )
+parser.add_argument(
+    "--augment-stain",
+    action="store_true",
+    help="Specify to use stain augmentation. Optional.",
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -171,13 +176,18 @@ if __name__ == "__main__":
     slide_paths = mask_paths.map(
         lambda x: args.slidefolder / x.with_suffix(".svs").name
     )
-    stain_matrices_paths = mask_paths.map(
-        lambda x: args.stain_matrices_folder / x.with_suffix(".npy").name
-    )
 
     split_df = pd.read_csv(args.split_csv).sort_values("slide")
     train_idxs = (split_df["split"] == "train").values
     val_idxs = ~train_idxs
+
+    if args.stain_matrices_folder is not None:
+        stain_matrices_paths = mask_paths.map(
+            lambda x: args.stain_matrices_folder / x.with_suffix(".npy").name
+        )
+        stain_matrices_paths = stain_matrices_paths[train_idxs]
+    else:
+        stain_matrices_paths = None
 
     transforms = [
         CropNonEmptyMaskIfExists(args.patch_size, args.patch_size),
@@ -191,8 +201,8 @@ if __name__ == "__main__":
         slide_paths[train_idxs],
         mask_paths[train_idxs],
         patches_paths[train_idxs],
-        # stain_matrices_paths[train_idxs],
-        # stain_augmentor=StainAugmentor(),
+        stain_matrices_paths,
+        stain_augmentor=StainAugmentor() if args.augment_stain else None,
         transforms=transforms,
     )
     val_ds = DetectionDataset(
@@ -202,11 +212,10 @@ if __name__ == "__main__":
         transforms=[CenterCrop(args.patch_size, args.patch_size), ToTensor()],
     )
 
-    sampler = BalancedRandomSampler(train_ds, p_pos=0.8)
+    sampler = BalancedRandomSampler(train_ds, p_pos=1)
     train_dl = DataLoader(
         train_ds,
         batch_size=args.batch_size,
-        shuffle=True,
         pin_memory=True,
         num_workers=args.num_workers,
         drop_last=True,
@@ -242,11 +251,8 @@ if __name__ == "__main__":
             Recall(),
             Specificity(),
         ],
-        det_metrics=[MAP()]
+        det_metrics=[MeanAveragePrecision()],
     )
-
-    if args.freeze_encoder:
-        plmodule.freeze_encoder()
 
     logger = CometLogger(
         api_key=os.environ["COMET_API_KEY"],
@@ -281,8 +287,7 @@ if __name__ == "__main__":
 
     if args.resume_version is not None:
         ckpt_path = (
-            args.logfolder
-            / f"apriorics/{args.resume_version}/checkpoints/last.ckpt"
+            args.logfolder / f"apriorics/{args.resume_version}/checkpoints/last.ckpt"
         )
         checkpoint = torch.load(ckpt_path)
         missing, unexpected = plmodule.load_state_dict(

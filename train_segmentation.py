@@ -6,7 +6,7 @@ from pytorch_lightning.loggers import CometLogger
 from apriorics.model_components.normalization import group_norm
 from apriorics.plmodules import get_scheduler_func, BasicSegmentationModule
 from apriorics.data import SegmentationDataset, BalancedRandomSampler
-from apriorics.transforms import ToTensor  # , StainAugmentor
+from apriorics.transforms import ToTensor, StainAugmentor
 from apriorics.metrics import DiceScore
 from apriorics.losses import get_loss
 from albumentations import (
@@ -177,6 +177,11 @@ parser.add_argument(
         "variable. Optional."
     ),
 )
+parser.add_argument(
+    "--augment-stain",
+    action="store_true",
+    help="Specify to use stain augmentation. Optional.",
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -193,13 +198,18 @@ if __name__ == "__main__":
     slide_paths = mask_paths.map(
         lambda x: args.slidefolder / x.with_suffix(".svs").name
     )
-    stain_matrices_paths = mask_paths.map(
-        lambda x: args.stain_matrices_folder / x.with_suffix(".npy").name
-    )
 
     split_df = pd.read_csv(args.split_csv).sort_values("slide")
     train_idxs = (split_df["split"] == "train").values
     val_idxs = ~train_idxs
+
+    if args.stain_matrices_folder is not None:
+        stain_matrices_paths = mask_paths.map(
+            lambda x: args.stain_matrices_folder / x.with_suffix(".npy").name
+        )
+        stain_matrices_paths = stain_matrices_paths[train_idxs]
+    else:
+        stain_matrices_paths = None
 
     transforms = [
         CropNonEmptyMaskIfExists(args.patch_size, args.patch_size),
@@ -213,8 +223,8 @@ if __name__ == "__main__":
         slide_paths[train_idxs],
         mask_paths[train_idxs],
         patches_paths[train_idxs],
-        # stain_matrices_paths[train_idxs],
-        # stain_augmentor=StainAugmentor(),
+        stain_matrices_paths,
+        stain_augmentor=StainAugmentor() if args.augment_stain else None,
         transforms=transforms,
     )
     val_ds = SegmentationDataset(
@@ -228,7 +238,6 @@ if __name__ == "__main__":
     train_dl = DataLoader(
         train_ds,
         batch_size=args.batch_size,
-        shuffle=True,
         pin_memory=True,
         num_workers=args.num_workers,
         drop_last=True,

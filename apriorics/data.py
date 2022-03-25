@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import Dataset, RandomSampler
 from pathaia.util.types import Slide, Patch
 from pathaia.util.basic import ifnone
-from albumentations import Compose, BasicTransform, BboxParams
+from albumentations import Compose, BasicTransform
 from apriorics.masks import mask_to_bbox
 from apriorics.transforms import StainAugmentor
 import csv
@@ -161,9 +161,7 @@ class DetectionDataset(Dataset):
         else:
             self.stain_matrices = [np.load(path) for path in stain_matrices_paths]
         self.stain_augmentor = stain_augmentor
-        self.transforms = Compose(
-            ifnone(transforms, []), bbox_params=BboxParams("pascal_voc")
-        )
+        self.transforms = Compose(ifnone(transforms, []))
 
     def __len__(self):
         return len(self.patches)
@@ -212,13 +210,13 @@ class BalancedRandomSampler(RandomSampler):
         generator: Optional[torch.Generator] = None,
         p_pos: float = 0.5,
     ):
+        self.p_pos = p_pos
         super().__init__(
             data_source,
             replacement=replacement,
             num_samples=num_samples,
             generator=generator,
         )
-        self.p_pos = p_pos
 
     @property
     def num_samples(self) -> int:

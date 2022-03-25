@@ -63,6 +63,11 @@ parser.add_argument(
     default=0,
     help="Part of the patches that should overlap. Default 0.3.",
 )
+parser.add_argument(
+    "--filter-pos",
+    action="store_true",
+    help="Specify to filter on patches containing positive masks. Optional.",
+)
 
 
 def get_mask_filter(mask, thumb_size=2000):
@@ -121,5 +126,7 @@ if __name__ == "__main__":
                     patch.position, patch.level, patch.size
                 ).convert("1")
                 row = patch.to_csv_row()
-                row["n_pos"] = np.asarray(patch_mask).sum()
-                writer.writerow(row)
+                n_pos = np.asarray(patch_mask).sum()
+                row["n_pos"] = n_pos
+                if not args.filter_pos or n_pos:
+                    writer.writerow(row)

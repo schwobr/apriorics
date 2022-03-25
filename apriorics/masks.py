@@ -285,13 +285,21 @@ def mask_to_bbox(mask: NDBoolMask, pad: int = 5):
     labels, n = label(mask, return_num=True)
     bboxes = []
     masks = []
+    h, w = mask.shape
 
     for i in range(1, n + 1):
         mask = labels == i
         ii, jj = np.nonzero(mask)
         y0, y1 = ii.min(), ii.max()
         x0, x1 = jj.min(), jj.max()
-        bboxes.append([x0 - pad, y0 - pad, x1 + pad, y1 + pad])
+        bboxes.append(
+            [
+                max(0, x0 - pad),
+                max(0, y0 - pad),
+                min(w - 1, x1 + pad),
+                min(h - 1, y1 + pad),
+            ]
+        )
         masks.append(mask)
     bboxes, masks = merge_bboxes(bboxes, masks)
     return np.array(bboxes, dtype=np.float32), np.stack(masks).astype(np.uint8)

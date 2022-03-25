@@ -60,7 +60,7 @@ parser.add_argument(
 parser.add_argument(
     "--overlap",
     type=float,
-    default=0.3,
+    default=0,
     help="Part of the patches that should overlap. Default 0.3.",
 )
 
@@ -86,7 +86,7 @@ if __name__ == "__main__":
 
     outfolder = args.outfolder / f"{args.patch_size}_{args.level}/patch_csvs"
 
-    interval = -int(args.overlap * args.psize)
+    interval = -int(args.overlap * args.patch_size)
 
     for in_file_path in input_files:
         mask_path = args.maskfolder / in_file_path.relative_to(
@@ -96,6 +96,7 @@ if __name__ == "__main__":
             continue
         slide = Slide(in_file_path, backend="cucim")
         mask = Slide(mask_path, backend="cucim")
+        print(in_file_path.stem)
 
         patches = slide_rois_no_image(
             slide,
@@ -121,4 +122,4 @@ if __name__ == "__main__":
                 ).convert("1")
                 row = patch.to_csv_row()
                 row["n_pos"] = np.asarray(patch_mask).sum()
-                writer.writerow()
+                writer.writerow(row)

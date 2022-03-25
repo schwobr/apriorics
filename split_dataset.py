@@ -77,6 +77,8 @@ if __name__ == "__main__":
 
     if args.seed is None:
         args.seed = os.environ.get("PL_GLOBAL_SEED")
+        if args.seed is not None:
+            args.seed = int(args.seed)
 
     rng = default_rng(args.seed)
     train_idxs = rng.choice(np.arange(n), size=n_train, replace=False)

@@ -26,6 +26,7 @@ if __name__ == "__main__":
     wktfiles = get_files(args.wktfolder, extensions=".wkt", recurse=args.recurse)
 
     for wktfile in wktfiles:
+        print(wktfile.stem)
         with open(wktfile, "r") as f:
             polygons = wkt.load(f)
 

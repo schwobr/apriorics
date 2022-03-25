@@ -181,7 +181,7 @@ class DetectionDataset(Dataset):
         )
         mask_region = np.asarray(
             mask.read_region(patch.position, patch.level, patch.size).convert("1"),
-            dtype=np.float32,
+            dtype=np.uint8,
         )
 
         if self.stain_augmentor is not None:

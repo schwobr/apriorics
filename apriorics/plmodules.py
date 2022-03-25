@@ -172,7 +172,6 @@ class BasicDetectionModule(pl.LightningModule):
     def __init__(
         self,
         model: nn.Module,
-        loss: nn.Module,
         lr: float,
         wd: float,
         scheduler_func: Optional[Callable] = None,
@@ -181,7 +180,6 @@ class BasicDetectionModule(pl.LightningModule):
     ):
         super().__init__()
         self.model = model
-        self.loss = loss
         self.lr = lr
         self.wd = wd
         self.scheduler_func = scheduler_func
@@ -218,8 +216,8 @@ class BasicDetectionModule(pl.LightningModule):
         if batch_idx % 100 == 0:
             self.log_images(x, y, y_hat, batch_idx)
 
-        self.seg_metrics(y_hat["masks"], y["masks"])
-        self.det_metrics(y_hat["boxes"], y["boxes"])
+        self.seg_metrics(y_hat["masks"].squeeze(1), y["masks"])
+        self.det_metrics(y_hat, y)
 
     def validation_epoch_end(self, outputs: Dict[str, Tensor]):
         self.log_dict(self.seg_metrics.compute(), sync_dist=True)

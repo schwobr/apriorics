@@ -38,7 +38,7 @@ if __name__ == "__main__":
                 small_mask = np.asarray(mask.read_region((x, y), (dx, dy), 0))[:, :, 0]
                 if small_mask.any():
                     small_mask = remove_small_objects(
-                        remove_small_holes(small_mask > 0, area_threshold=10),
+                        remove_small_holes(small_mask > 127, area_threshold=10),
                         min_size=10,
                     )
                     full_mask[y : y + dy, x : x + dx] = (

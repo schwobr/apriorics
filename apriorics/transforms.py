@@ -1,7 +1,8 @@
 from albumentations.core.transforms_interface import DualTransform, ImageOnlyTransform
+from albumentations import CropNonEmptyMaskIfExists
 import numpy as np
 from pathaia.util.basic import ifnone
-from typing import Callable, Optional, Any, List, Tuple, Dict
+from typing import Callable, Optional, Any, List, Sequence, Tuple, Dict
 from nptyping import NDArray
 from numbers import Number
 from staintools.miscellaneous.optical_density_conversion import convert_RGB_to_OD
@@ -10,6 +11,7 @@ from staintools.stain_extraction.vahadane_stain_extractor import VahadaneStainEx
 from torchvision.transforms.functional import to_tensor
 import torch
 from pathaia.util.types import NDImage, NDGrayImage, NDByteImage
+from skimage.morphology import label, remove_small_holes, remove_small_objects
 
 
 class ToSingleChannelMask(DualTransform):
@@ -194,3 +196,109 @@ class StainAugmentor(ImageOnlyTransform):
 
     def update_params(self, params: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         return params
+
+
+class FixedCropAroundMaskIfExists(CropNonEmptyMaskIfExists):
+    """Crop area with mask if mask is non-empty, else make center crop. Cropped area
+    will always be centered around a non empty area in a fully deterministic way.
+    Args:
+        height: vertical size of crop in pixels
+        width: horizontal size of crop in pixels
+        ignore_values: values to ignore in mask, `0` values are always ignored
+            (e.g. if background value is 5 set `ignore_values=[5]` to ignore)
+        ignore_channels: channels to ignore in mask
+            (e.g. if background is a first channel set `ignore_channels=[0]` to ignore)
+        p: probability of applying the transform. Default: 1.0.
+    """
+
+    def __init__(
+        self,
+        height: int,
+        width: int,
+        ignore_values: Optional[Sequence[int]] = None,
+        ignore_channels: Optional[Sequence[int]] = None,
+        always_apply: bool = False,
+        p: float = 1.0,
+    ):
+        super(FixedCropAroundMaskIfExists, self).__init__(
+            height,
+            width,
+            ignore_values=ignore_values,
+            ignore_channels=ignore_channels,
+            always_apply=always_apply,
+            p=p,
+        )
+        self.height = height
+        self.width = width
+
+    def update_params(self, params, **kwargs):
+        super().update_params(params, **kwargs)
+        if "mask" in kwargs:
+            mask = self._preprocess_mask(kwargs["mask"])
+        elif "masks" in kwargs and len(kwargs["masks"]):
+            masks = kwargs["masks"]
+            mask = self._preprocess_mask(masks[0])
+            for m in masks[1:]:
+                mask |= self._preprocess_mask(m)
+        else:
+            raise RuntimeError("Can not find mask for FixedCropAroundMaskIfExists")
+
+        mask_height, mask_width = mask.shape[:2]
+
+        if mask.any():
+            shape = np.array([self.height, self.width], dtype=np.int64)
+            mask = mask.sum(axis=-1) if mask.ndim == 3 else mask
+            labels, n = label(mask, return_num=True)
+            mask = np.zeros_like(mask)
+            for i in range(1, n+1):
+                if (labels == i).sum() > mask.sum():
+                    mask = labels == i
+            non_zero_yx = np.argwhere(mask)
+            center = non_zero_yx.mean(axis=0, dtype=np.int64)
+            y_min, x_min = np.maximum(center - shape, 0)
+            y_min = min(y_min, mask_height - self.height)
+            x_min = min(x_min, mask_width - self.width)
+        else:
+            y_min = (mask_height - self.height) // 2
+            x_min = (mask_width - self.width) // 2
+
+        x_max = x_min + self.width
+        y_max = y_min + self.height
+
+        params.update({"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max})
+        return params
+
+
+class CorrectCompression(DualTransform):
+    def __init__(
+        self,
+        min_size: int = 10,
+        area_threshold: int = 10,
+        always_apply: bool = False,
+        p: float = 1.0,
+    ):
+        super().__init__(always_apply=always_apply, p=p)
+        self.min_size = min_size
+        self.area_threshold = area_threshold
+
+    def apply(self, img, **params):
+        return img
+
+    def apply_to_mask(self, mask, **params):
+        if mask.ndim == 3:
+            new_mask = mask[:, :, 0] > 0
+        else:
+            new_mask = mask > 0
+        new_mask = remove_small_objects(
+            remove_small_holes(new_mask, area_threshold=self.area_threshold),
+            min_size=self.min_size,
+        )
+        new_mask = new_mask.astype(mask.dtype)
+        if mask.dtype == np.uint8:
+            new_mask *= 255
+        if mask.ndim == 3:
+            new_mask = np.repeat(new_mask[:, :, None], mask.shape[-1], axis=-1)
+        return new_mask
+
+    def get_transform_init_args_names(self):
+        return ("min_size", "area_threshold")

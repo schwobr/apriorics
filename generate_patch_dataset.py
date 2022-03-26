@@ -8,6 +8,7 @@ from pathaia.patches.functional_api import slide_rois_no_image
 from pathaia.patches import filter_thumbnail
 import numpy as np
 from skimage.transform import resize
+from skimage.morphology import remove_small_objects
 
 
 parser = ArgumentParser(prog="Generates the PathAIA patch CSVs for slides.")
@@ -65,8 +66,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "--filter-pos",
-    action="store_true",
-    help="Specify to filter on patches containing positive masks. Optional.",
+    type=int,
+    default=0,
+    help="Minimum number of positive pixels in mask to keep patch. Default 0.",
 )
 
 
@@ -122,11 +124,17 @@ if __name__ == "__main__":
             writer = csv.DictWriter(out_file, fieldnames=Patch.get_fields() + ["n_pos"])
             writer.writeheader()
             for patch in patches:
-                patch_mask = mask.read_region(
-                    patch.position, patch.level, patch.size
-                ).convert("1")
+                patch_mask = np.asarray(
+                    mask.read_region(patch.position, patch.level, patch.size).convert(
+                        "1"
+                    )
+                )
+                if args.filter_pos:
+                    patch_mask = remove_small_objects(
+                        patch_mask, min_size=args.filter_pos
+                    )
                 row = patch.to_csv_row()
-                n_pos = np.asarray(patch_mask).sum()
+                n_pos = patch_mask.sum()
                 row["n_pos"] = n_pos
-                if not args.filter_pos or n_pos:
+                if n_pos >= args.filter_pos:
                     writer.writerow(row)

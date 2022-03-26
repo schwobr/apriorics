@@ -134,6 +134,7 @@ class DetectionDataset(Dataset):
         stain_augmentor: Optional[StainAugmentor] = None,
         transforms: Optional[Sequence[BasicTransform]] = None,
         slide_backend: str = "cucim",
+        min_size: int = 10,
     ):
         super().__init__()
         self.slides = []
@@ -162,6 +163,7 @@ class DetectionDataset(Dataset):
             self.stain_matrices = [np.load(path) for path in stain_matrices_paths]
         self.stain_augmentor = stain_augmentor
         self.transforms = Compose(ifnone(transforms, []))
+        self.min_size = min_size
 
     def __len__(self):
         return len(self.patches)
@@ -191,8 +193,11 @@ class DetectionDataset(Dataset):
                 "image"
             ]
 
-        transformed = self.transforms(image=slide_region, mask=mask_region)
-        bboxes, masks = mask_to_bbox(transformed["mask"])
+        retransform = True
+        while retransform:
+            transformed = self.transforms(image=slide_region, mask=mask_region)
+            retransform = transformed["mask"].sum() < self.min_size
+        bboxes, masks = mask_to_bbox(transformed["mask"], min_size=self.min_size)
         target = {
             "boxes": bboxes,
             "masks": masks,
@@ -234,8 +239,9 @@ class BalancedRandomSampler(RandomSampler):
     def get_idxs(self) -> List[int]:
         mask = self.data_source.n_pos == 0
         avail = [mask.nonzero()[0].tolist(), (~mask).nonzero()[0].tolist()]
+        avail = [cl_patches for cl_patches in avail if cl_patches]
         idxs = []
-        for _ in range(self.num_samples):
+        for k in range(self.num_samples):
             x = torch.rand(2, generator=self.generator)
             cl = min(int(x[0] < self.p_pos), len(avail)-1)
             cl_patches = avail[cl]
@@ -245,7 +251,7 @@ class BalancedRandomSampler(RandomSampler):
             else:
                 patch = cl_patches.pop(idx)
                 if len(cl_patches) == 0:
-                    avail.pop(cl_patches)
+                    avail.pop(cl)
             idxs.append(patch)
         return idxs
 

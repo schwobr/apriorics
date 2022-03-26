@@ -13,6 +13,7 @@ import numpy as np
 from pathaia.util.types import NDImage, NDByteGrayImage, NDBoolMask
 from PIL.Image import Image
 from scipy import ndimage as ndi
+import torch
 
 
 def remove_large_objects(ar, max_size=1000, connectivity=1):
@@ -281,7 +282,8 @@ def merge_bboxes(
     return bboxes, masks
 
 
-def mask_to_bbox(mask: NDBoolMask, pad: int = 5):
+def mask_to_bbox(mask: Union[NDBoolMask, torch.Tensor], pad: int = 5, min_size=10):
+    tensor = isinstance(mask, torch.Tensor)
     labels, n = label(mask, return_num=True)
     bboxes = []
     masks = []
@@ -289,6 +291,8 @@ def mask_to_bbox(mask: NDBoolMask, pad: int = 5):
 
     for i in range(1, n + 1):
         mask = labels == i
+        if mask.sum() < min_size:
+            continue
         ii, jj = np.nonzero(mask)
         y0, y1 = ii.min(), ii.max()
         x0, x1 = jj.min(), jj.max()
@@ -302,4 +306,7 @@ def mask_to_bbox(mask: NDBoolMask, pad: int = 5):
         )
         masks.append(mask)
     bboxes, masks = merge_bboxes(bboxes, masks)
-    return np.array(bboxes, dtype=np.float32), np.stack(masks).astype(np.uint8)
+    bboxes, masks = np.array(bboxes, dtype=np.float32), np.stack(masks).astype(np.uint8)
+    if tensor:
+        bboxes, masks = torch.as_tensor(bboxes), torch.as_tensor(masks)
+    return bboxes, masks

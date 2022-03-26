@@ -1,11 +1,16 @@
+from pytorch_lightning.loggers import CometLogger
 import horovod.torch as hvd
 from argparse import ArgumentParser
 from math import ceil
 from pathlib import Path
-from pytorch_lightning.loggers import CometLogger
 from apriorics.plmodules import get_scheduler_func, BasicDetectionModule
 from apriorics.data import DetectionDataset, BalancedRandomSampler
-from apriorics.transforms import ToTensor, StainAugmentor
+from apriorics.transforms import (
+    ToTensor,
+    StainAugmentor,
+    FixedCropAroundMaskIfExists,
+    CorrectCompression,
+)
 from apriorics.metrics import DiceScore
 from albumentations import (
     RandomRotate90,
@@ -13,7 +18,6 @@ from albumentations import (
     Transpose,
     RandomBrightnessContrast,
     CropNonEmptyMaskIfExists,
-    CenterCrop,
 )
 from pathaia.util.paths import get_files
 import pandas as pd
@@ -161,6 +165,16 @@ parser.add_argument(
     help="Specify to use stain augmentation. Optional.",
 )
 
+
+def _collate_fn(batch):
+    xs = []
+    ys = []
+    for x, y in batch:
+        xs.append(x)
+        ys.append(y)
+    return xs, ys
+
+
 if __name__ == "__main__":
     args = parser.parse_args()
     hvd.init()
@@ -190,6 +204,7 @@ if __name__ == "__main__":
         stain_matrices_paths = None
 
     transforms = [
+        CorrectCompression(),
         CropNonEmptyMaskIfExists(args.patch_size, args.patch_size),
         Flip(),
         Transpose(),
@@ -209,10 +224,16 @@ if __name__ == "__main__":
         slide_paths[val_idxs],
         mask_paths[val_idxs],
         patches_paths[val_idxs],
-        transforms=[CenterCrop(args.patch_size, args.patch_size), ToTensor()],
+        transforms=[
+            CorrectCompression(),
+            FixedCropAroundMaskIfExists(args.patch_size, args.patch_size),
+            ToTensor(),
+        ],
+        slide_backend="openslide",
     )
 
     sampler = BalancedRandomSampler(train_ds, p_pos=1)
+
     train_dl = DataLoader(
         train_ds,
         batch_size=args.batch_size,
@@ -220,6 +241,7 @@ if __name__ == "__main__":
         num_workers=args.num_workers,
         drop_last=True,
         sampler=sampler,
+        collate_fn=_collate_fn,
     )
     val_dl = DataLoader(
         val_ds,
@@ -227,6 +249,7 @@ if __name__ == "__main__":
         shuffle=False,
         pin_memory=True,
         num_workers=args.num_workers,
+        collate_fn=_collate_fn,
     )
 
     scheduler_func = get_scheduler_func(
@@ -275,14 +298,14 @@ if __name__ == "__main__":
     )
 
     trainer = pl.Trainer(
-        gpus=1,
+        gpus=args.gpus,
         min_epochs=args.epochs,
         max_epochs=args.epochs,
         logger=logger,
         precision=16,
         accumulate_grad_batches=args.grad_accumulation,
         callbacks=[ckpt_callback],
-        strategy="horovod",
+        # strategy="horovod",
     )
 
     if args.resume_version is not None:

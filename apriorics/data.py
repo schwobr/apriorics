@@ -197,7 +197,7 @@ class DetectionDataset(Dataset):
         while retransform:
             transformed = self.transforms(image=slide_region, mask=mask_region)
             retransform = transformed["mask"].sum() < self.min_size
-        bboxes, masks = mask_to_bbox(transformed["mask"], min_size=self.min_size)
+        bboxes, masks = mask_to_bbox(transformed["mask"], pad=0, min_size=0)
         target = {
             "boxes": bboxes,
             "masks": masks,

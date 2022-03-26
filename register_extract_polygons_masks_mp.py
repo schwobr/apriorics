@@ -315,11 +315,11 @@ if __name__ == "__main__":
 
         maskpath = args.maskfolder / f"{hefile.stem}.png"
         full_mask_np = np.frombuffer(full_mask.get_obj(), dtype=bool).reshape(h, w)
-        Image.fromarray(full_mask_np).save(maskpath)
+        Image.fromarray(full_mask_np).convert("RGB").save(maskpath)
         if not args.novips:
             vips_cmd = (
                 f"vips tiffsave {maskpath} {maskpath.with_suffix('.tif')} "
-                "--compression jpeg --tile-width 256 --tile-height 256 --tile "
+                "--compression jpeg --Q 100 --tile-width 256 --tile-height 256 --tile "
                 "--pyramid"
             )
 

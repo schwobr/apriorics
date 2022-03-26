@@ -280,7 +280,7 @@ class BasicDetectionModule(pl.LightningModule):
             cmap = np.linspace(0, 1, len(gt["boxes"]))
             colors = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
             boxes_gt.append(
-                draw_bounding_boxes(img, gt["boxes"].cpu(), width=3, colors=colors)
+                draw_bounding_boxes(img, gt["boxes"].cpu(), width=2, colors=colors)
             )
 
             boxes = pred["boxes"][pred["scores"] > 0.7].cpu()
@@ -290,7 +290,7 @@ class BasicDetectionModule(pl.LightningModule):
             cmap = np.linspace(0, 1, len(boxes))
             colors = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
             boxes_pred.append(
-                draw_bounding_boxes(img, boxes, width=3, colors=colors, labels=labels)
+                draw_bounding_boxes(img, boxes, width=2, colors=colors, labels=labels)
             )
 
         grid = make_grid(masks_gt + masks_pred + boxes_gt + boxes_pred, len(x))

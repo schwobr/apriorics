@@ -221,7 +221,7 @@ class RandomCropAroundMaskIfExists(CropNonEmptyMaskIfExists):
         always_apply: bool = False,
         p: float = 1.0,
     ):
-        super(FixedCropAroundMaskIfExists, self).__init__(
+        super(RandomCropAroundMaskIfExists, self).__init__(
             height,
             width,
             ignore_values=ignore_values,
@@ -254,10 +254,10 @@ class RandomCropAroundMaskIfExists(CropNonEmptyMaskIfExists):
             non_zero_yx = np.argwhere(mask)
             ymin, xmin = non_zero_yx.min(0)
             ymax, xmax = non_zero_yx.max(0)
-            xmin = random.randint(
+            x_min = random.randint(
                 max(0, xmax - self.width), min(xmin, mask_width - self.width)
             )
-            ymin = random.randint(
+            y_min = random.randint(
                 max(0, ymax - self.width), min(ymin, mask_width - self.width)
             )
         else:

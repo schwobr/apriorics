@@ -62,7 +62,7 @@ parser.add_argument(
     "--overlap",
     type=float,
     default=0,
-    help="Part of the patches that should overlap. Default 0.3.",
+    help="Part of the patches that should overlap. Default 0.",
 )
 parser.add_argument(
     "--filter-pos",

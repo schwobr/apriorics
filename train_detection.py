@@ -8,6 +8,7 @@ from apriorics.data import DetectionDataset, BalancedRandomSampler
 from apriorics.transforms import (
     ToTensor,
     StainAugmentor,
+    RandomCropAroundMaskIfExists,
     FixedCropAroundMaskIfExists,
     CorrectCompression,
 )
@@ -17,7 +18,6 @@ from albumentations import (
     Flip,
     Transpose,
     RandomBrightnessContrast,
-    CropNonEmptyMaskIfExists,
 )
 from pathaia.util.paths import get_files
 import pandas as pd
@@ -205,7 +205,7 @@ if __name__ == "__main__":
 
     transforms = [
         CorrectCompression(),
-        CropNonEmptyMaskIfExists(args.patch_size, args.patch_size),
+        RandomCropAroundMaskIfExists(args.patch_size, args.patch_size),
         Flip(),
         Transpose(),
         RandomRotate90(),

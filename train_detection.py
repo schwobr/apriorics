@@ -1,32 +1,35 @@
+from pytorch_lightning.loggers import CometLogger
 import horovod.torch as hvd
 from argparse import ArgumentParser
 from math import ceil
 from pathlib import Path
-from pytorch_lightning.loggers import CometLogger
-from apriorics.model_components.normalization import group_norm
-from apriorics.plmodules import get_scheduler_func, BasicSegmentationModule
-from apriorics.data import SegmentationDataset, BalancedRandomSampler
-from apriorics.transforms import ToTensor, StainAugmentor
+from apriorics.plmodules import get_scheduler_func, BasicDetectionModule
+from apriorics.data import DetectionDataset, BalancedRandomSampler
+from apriorics.transforms import (
+    ToTensor,
+    StainAugmentor,
+    RandomCropAroundMaskIfExists,
+    FixedCropAroundMaskIfExists,
+    CorrectCompression,
+)
 from apriorics.metrics import DiceScore
-from apriorics.losses import get_loss
 from albumentations import (
     RandomRotate90,
     Flip,
     Transpose,
     RandomBrightnessContrast,
-    CropNonEmptyMaskIfExists,
-    CenterCrop,
 )
 from pathaia.util.paths import get_files
 import pandas as pd
 from torchmetrics import JaccardIndex, Precision, Recall, Specificity, Accuracy
+from torchmetrics.detection.map import MeanAveragePrecision
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 import os
 import torch
 from torch.utils.data import DataLoader
-from timm import create_model
 from pytorch_lightning.utilities.seed import seed_everything
+from torchvision.models.detection import maskrcnn_resnet50_fpn
 
 IHCS = [
     "AE1AE3",
@@ -45,14 +48,6 @@ parser = ArgumentParser(
         "Train a segmentation model for a specific IHC. Should be called as "
         "horovodrun -np n_gpus python train_segmentation.py."
     )
-)
-parser.add_argument(
-    "--model",
-    help=(
-        "Model to use for training. If unet, can be formatted as unet/encoder to "
-        "specify a specific encoder. Must be one of unet, med_t, logo, axalunet, gated."
-    ),
-    required=True,
 )
 parser.add_argument(
     "--ihc-type",
@@ -135,19 +130,6 @@ parser.add_argument(
     help="Number of workers to use for data loading. Default 0 (only main process).",
 )
 parser.add_argument(
-    "--freeze-encoder",
-    action="store_true",
-    help="Specify to freeze encoder when using unet model. Optional.",
-)
-parser.add_argument(
-    "--loss",
-    default="bce",
-    help=(
-        "Loss function to use for training. Must be one of bce, focal, dice, "
-        "sum_loss1_coef1_****. Default bce."
-    ),
-)
-parser.add_argument(
     "--group-norm",
     action="store_true",
     help="Specify to use group norm instead of batch norm in model. Optional.",
@@ -183,6 +165,16 @@ parser.add_argument(
     help="Specify to use stain augmentation. Optional.",
 )
 
+
+def _collate_fn(batch):
+    xs = []
+    ys = []
+    for x, y in batch:
+        xs.append(x)
+        ys.append(y)
+    return xs, ys
+
+
 if __name__ == "__main__":
     args = parser.parse_args()
     hvd.init()
@@ -212,14 +204,15 @@ if __name__ == "__main__":
         stain_matrices_paths = None
 
     transforms = [
-        CropNonEmptyMaskIfExists(args.patch_size, args.patch_size),
+        CorrectCompression(),
+        RandomCropAroundMaskIfExists(args.patch_size, args.patch_size),
         Flip(),
         Transpose(),
         RandomRotate90(),
         RandomBrightnessContrast(),
         ToTensor(),
     ]
-    train_ds = SegmentationDataset(
+    train_ds = DetectionDataset(
         slide_paths[train_idxs],
         mask_paths[train_idxs],
         patches_paths[train_idxs],
@@ -227,14 +220,20 @@ if __name__ == "__main__":
         stain_augmentor=StainAugmentor() if args.augment_stain else None,
         transforms=transforms,
     )
-    val_ds = SegmentationDataset(
+    val_ds = DetectionDataset(
         slide_paths[val_idxs],
         mask_paths[val_idxs],
         patches_paths[val_idxs],
-        transforms=[CenterCrop(args.patch_size, args.patch_size), ToTensor()],
+        transforms=[
+            CorrectCompression(),
+            FixedCropAroundMaskIfExists(args.patch_size, args.patch_size),
+            ToTensor(),
+        ],
+        slide_backend="openslide",
     )
 
-    sampler = BalancedRandomSampler(train_ds, p_pos=0.95)
+    sampler = BalancedRandomSampler(train_ds, p_pos=1)
+
     train_dl = DataLoader(
         train_ds,
         batch_size=args.batch_size,
@@ -242,6 +241,7 @@ if __name__ == "__main__":
         num_workers=args.num_workers,
         drop_last=True,
         sampler=sampler,
+        collate_fn=_collate_fn,
     )
     val_dl = DataLoader(
         val_ds,
@@ -249,6 +249,7 @@ if __name__ == "__main__":
         shuffle=False,
         pin_memory=True,
         num_workers=args.num_workers,
+        collate_fn=_collate_fn,
     )
 
     scheduler_func = get_scheduler_func(
@@ -258,27 +259,14 @@ if __name__ == "__main__":
         lr=args.lr,
     )
 
-    model = args.model.split("/")
-    if model[0] == "unet":
-        encoder_name = model[1]
-    else:
-        encoder_name = None
-    model = create_model(
-        model[0],
-        encoder_name=encoder_name,
-        pretrained=True,
-        img_size=args.patch_size,
-        num_classes=1,
-        norm_layer=group_norm if args.group_norm else torch.nn.BatchNorm2d,
-    )
+    model = maskrcnn_resnet50_fpn(num_classes=2)
 
-    plmodule = BasicSegmentationModule(
+    plmodule = BasicDetectionModule(
         model,
-        loss=get_loss(args.loss),
         lr=args.lr,
         wd=args.wd,
         scheduler_func=scheduler_func,
-        metrics=[
+        seg_metrics=[
             JaccardIndex(2),
             DiceScore(),
             Accuracy(),
@@ -286,10 +274,8 @@ if __name__ == "__main__":
             Recall(),
             Specificity(),
         ],
+        det_metrics=[MeanAveragePrecision()],
     )
-
-    if args.freeze_encoder:
-        plmodule.freeze_encoder()
 
     logger = CometLogger(
         api_key=os.environ["COMET_API_KEY"],
@@ -305,27 +291,26 @@ if __name__ == "__main__":
 
     ckpt_callback = ModelCheckpoint(
         save_top_k=3,
-        monitor=f"val_loss_{args.loss}",
+        monitor="DiceScore",
         save_last=True,
-        mode="min",
-        filename="{epoch}-{val_loss:.3f}",
+        mode="max",
+        filename="{epoch}-{DiceScore:.3f}",
     )
 
     trainer = pl.Trainer(
-        gpus=1,
+        gpus=args.gpus,
         min_epochs=args.epochs,
         max_epochs=args.epochs,
         logger=logger,
         precision=16,
         accumulate_grad_batches=args.grad_accumulation,
         callbacks=[ckpt_callback],
-        strategy="horovod",
+        # strategy="horovod",
     )
 
     if args.resume_version is not None:
         ckpt_path = (
-            args.logfolder
-            / f"apriorics/{args.resume_version}/checkpoints/last.ckpt"
+            args.logfolder / f"apriorics/{args.resume_version}/checkpoints/last.ckpt"
         )
         checkpoint = torch.load(ckpt_path)
         missing, unexpected = plmodule.load_state_dict(

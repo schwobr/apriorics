@@ -1,3 +1,4 @@
+import numpy as np
 import pytorch_lightning as pl
 from typing import List, Optional, Dict, Callable, Sequence, Tuple, Union
 from torch import Tensor, nn
@@ -16,6 +17,7 @@ from pathaia.util.basic import ifnone
 
 from apriorics.losses import get_loss_name
 from apriorics.model_components.utils import named_leaf_modules
+from matplotlib.cm import rainbow
 
 
 def get_scheduler_func(
@@ -115,7 +117,7 @@ class BasicSegmentationModule(pl.LightningModule):
         self.log(f"val_loss_{get_loss_name(self.loss)}", loss, sync_dist=True)
 
         y_hat = torch.sigmoid(y_hat)
-        if batch_idx % 100 == 0:
+        if batch_idx % 100 == 0 and self.trainer.training_type_plugin.global_rank == 0:
             self.log_images(x, y, y_hat, batch_idx)
 
         self.metrics(y_hat, y.int())
@@ -172,7 +174,6 @@ class BasicDetectionModule(pl.LightningModule):
     def __init__(
         self,
         model: nn.Module,
-        loss: nn.Module,
         lr: float,
         wd: float,
         scheduler_func: Optional[Callable] = None,
@@ -181,7 +182,6 @@ class BasicDetectionModule(pl.LightningModule):
     ):
         super().__init__()
         self.model = model
-        self.loss = loss
         self.lr = lr
         self.wd = wd
         self.scheduler_func = scheduler_func
@@ -189,12 +189,12 @@ class BasicDetectionModule(pl.LightningModule):
         self.det_metrics = MetricCollection(ifnone(det_metrics, []))
 
     def forward(
-        self, x: Tensor, y: Optional[List[Dict[str, Tensor]]] = None
+        self, x: List[Tensor], y: Optional[List[Dict[str, Tensor]]] = None
     ) -> Union[Dict[str, Tensor], List[Dict[str, Tensor]]]:
-        return self.model(x, y).squeeze(1)
+        return self.model(x, y)
 
     def training_step(
-        self, batch: Tuple[Tensor, List[Dict[str, Tensor]]], batch_idx: int
+        self, batch: Tuple[List[Tensor], List[Dict[str, Tensor]]], batch_idx: int
     ) -> Tensor:
         x, y = batch
         losses = self(x, y)
@@ -207,7 +207,7 @@ class BasicDetectionModule(pl.LightningModule):
 
     def validation_step(
         self,
-        batch: Tuple[Tensor, List[Dict[str, Tensor]]],
+        batch: Tuple[List[Tensor], List[Dict[str, Tensor]]],
         batch_idx: int,
         *args,
         **kwargs,
@@ -218,8 +218,16 @@ class BasicDetectionModule(pl.LightningModule):
         if batch_idx % 100 == 0:
             self.log_images(x, y, y_hat, batch_idx)
 
-        self.seg_metrics(y_hat["masks"], y["masks"])
-        self.det_metrics(y_hat["boxes"], y["boxes"])
+        masks_pred = []
+        masks_gt = []
+        for gt, pred in zip(y, y_hat):
+            masks_pred.append(pred["masks"].squeeze(1).prod(0))
+            masks_gt.append(gt["masks"].prod(0))
+        masks_pred = torch.stack(masks_pred)
+        masks_gt = torch.stack(masks_gt)
+
+        self.seg_metrics(masks_pred, masks_gt)
+        self.det_metrics(y_hat, y)
 
     def validation_epoch_end(self, outputs: Dict[str, Tensor]):
         self.log_dict(self.seg_metrics.compute(), sync_dist=True)
@@ -238,25 +246,54 @@ class BasicDetectionModule(pl.LightningModule):
             self.sched = self.scheduler_func(self.opt)
             return {"optimizer": self.opt, "lr_scheduler": self.sched}
 
-    def log_images(self, x: Tensor, y: Tensor, y_hat: Tensor, batch_idx: int):
-        x = (x * 255).byte()
+    def log_images(
+        self,
+        x: List[Tensor],
+        y: List[Dict[str, Tensor]],
+        y_hat: List[Dict[str, Tensor]],
+        batch_idx: int,
+    ):
+        masks_gt = []
+        masks_pred = []
+        boxes_gt = []
+        boxes_pred = []
 
-        masks_gt = [
-            draw_segmentation_masks(img, masks) for img, masks in zip(x, y["masks"])
-        ]
-        masks_pred = [
-            draw_segmentation_masks(img, masks.squeeze(1) > 0.5)
-            for img, masks in zip(x, y_hat["masks"])
-        ]
+        for img, gt, pred in zip(x, y, y_hat):
+            img = (img.cpu() * 255).byte()
 
-        boxes_gt = [
-            draw_bounding_boxes(img, boxes) for img, boxes in zip(x, y["boxes"])
-        ]
-        boxes_pred = [
-            draw_bounding_boxes(img, boxes) for img, boxes in zip(x, y_hat["boxes"])
-        ]
+            cmap = np.linspace(0, 1, len(gt["masks"]))
+            colors = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
+            masks_gt.append(
+                draw_segmentation_masks(
+                    img, gt["masks"].cpu().bool(), alpha=0.5, colors=colors
+                )
+            )
 
-        grid = make_grid(masks_gt + masks_pred + boxes_gt + boxes_pred, x.shape[0])
+            cmap = np.linspace(0, 1, len(pred["masks"]))
+            colors = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
+            masks_pred.append(
+                draw_segmentation_masks(
+                    img, pred["masks"].cpu().squeeze(1) > 0.5, alpha=0.5, colors=colors
+                )
+            )
+
+            cmap = np.linspace(0, 1, len(gt["boxes"]))
+            colors = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
+            boxes_gt.append(
+                draw_bounding_boxes(img, gt["boxes"].cpu(), width=2, colors=colors)
+            )
+
+            boxes = pred["boxes"][pred["scores"] > 0.7].cpu()
+            labels = [
+                f"{score.item(): .2f}" for score in pred["scores"].cpu() if score > 0.7
+            ]
+            cmap = np.linspace(0, 1, len(boxes))
+            colors = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
+            boxes_pred.append(
+                draw_bounding_boxes(img, boxes, width=2, colors=colors, labels=labels)
+            )
+
+        grid = make_grid(masks_gt + masks_pred + boxes_gt + boxes_pred, len(x))
         self.logger.experiment.log_image(
             to_pil_image(grid),
             f"val_image_sample_{self.current_epoch}_{batch_idx}",

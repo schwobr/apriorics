@@ -1,6 +1,7 @@
-from typing import Callable, Optional, Union
+from multiprocessing import Array
+from typing import Callable, Optional, Union, List, Tuple
 from skimage.filters import threshold_otsu
-from skimage.color import rgb2hed
+from skimage.color import rgb2hed, rgb2hsv
 from skimage.morphology import (
     remove_small_holes,
     remove_small_objects,
@@ -11,6 +12,33 @@ from skimage.morphology import (
 import numpy as np
 from pathaia.util.types import NDImage, NDByteGrayImage, NDBoolMask
 from PIL.Image import Image
+from scipy import ndimage as ndi
+import torch
+
+
+def remove_large_objects(ar, max_size=1000, connectivity=1):
+    out = ar.copy()
+
+    if out.dtype == bool:
+        footprint = ndi.generate_binary_structure(ar.ndim, connectivity)
+        ccs = np.zeros_like(ar, dtype=np.int32)
+        ndi.label(ar, footprint, output=ccs)
+    else:
+        ccs = out
+
+    try:
+        component_sizes = np.bincount(ccs.ravel())
+    except ValueError:
+        raise ValueError(
+            "Negative value labels are not supported. Try "
+            "relabeling the input with `scipy.ndimage.label` or "
+            "`skimage.morphology.label`."
+        )
+
+    too_large = component_sizes > max_size
+    too_large_mask = too_large[ccs]
+    out[too_large_mask] = 0
+    return out
 
 
 def get_tissue_mask(img_G: NDByteGrayImage, blacktol: int = 0, whitetol: int = 247):
@@ -97,19 +125,25 @@ def get_mask_AE1AE3(
     Returns:
         Intersection of H&E and IHC masks.
     """
-    he_H = rgb2hed(np.asarray(he))
+    he = np.asarray(he)
+    he_H = rgb2hed(he)
     he_DAB = he_H[:, :, 2]
     he_H = he_H[:, :, 0]
-    ihc_DAB = rgb2hed(np.asarray(ihc))[:, :, 2]
+    he_hue = rgb2hsv(he)[:, :, 0]
+    ihc = np.asarray(ihc)
+    ihc_DAB = rgb2hed(ihc)[:, :, 2]
+    ihc_s = rgb2hsv(ihc)[:, :, 1]
     mask_he = binary_closing(
         remove_small_objects(
-            remove_small_holes(he_H > 0.005, area_threshold=1000), min_size=500
+            remove_small_holes((he_H > 0.005) & (he_hue > 0.69), area_threshold=1000),
+            min_size=500,
         ),
         footprint=disk(10),
     )
     mask_ihc = binary_closing(
         remove_small_objects(
-            remove_small_holes(ihc_DAB > 0.03, area_threshold=1000), min_size=500
+            remove_small_holes((ihc_DAB > 0.03) & (ihc_s > 0.1), area_threshold=1000),
+            min_size=500,
         ),
         footprint=disk(10),
     )
@@ -135,23 +169,33 @@ def get_mask_PHH3(he: Union[Image, NDImage], ihc: Union[Image, NDImage]) -> NDBo
     Returns:
         Intersection of H&E and IHC masks.
     """
-    he_H = rgb2hed(np.asarray(he))
+    he = np.asarray(he)
+    he_H = rgb2hed(he)
     he_DAB = he_H[:, :, 2]
     he_H = he_H[:, :, 0]
-    ihc_DAB = rgb2hed(np.asarray(ihc))[:, :, 2]
+    he_hue = rgb2hsv(he)[:, :, 0]
+    ihc = np.asarray(ihc)
+    ihc_DAB = rgb2hed(ihc)[:, :, 2]
+    ihc_s = rgb2hsv(ihc)[:, :, 1]
     mask_he = remove_small_objects(
-        remove_small_holes((he_H > 0.07) & (he_H < 0.14), area_threshold=50),
+        remove_small_holes(
+            (he_H > 0.06) & (he_H < 0.14) & (he_hue > 0.69), area_threshold=50
+        ),
         min_size=50,
     )
     mask_ihc = remove_small_objects(
-        remove_small_holes(ihc_DAB > 0.04, area_threshold=50), min_size=50
+        remove_small_holes((ihc_DAB > 0.04) & (ihc_s > 0.1), area_threshold=50),
+        min_size=50,
     )
 
     mask_he_DAB = remove_small_objects(
         remove_small_holes(he_DAB > 0.04, area_threshold=50), min_size=50
     )
 
-    mask = remove_small_objects(mask_he & mask_ihc & ~mask_he_DAB, min_size=100)
+    mask = remove_large_objects(
+        remove_small_objects(mask_he & mask_ihc & ~mask_he_DAB, min_size=50),
+        max_size=1000,
+    )
     return mask
 
 
@@ -190,16 +234,79 @@ def update_full_mask(
     full_mask[y : y + dy, x : x + dx] = mask[:dy, :dx]
 
 
-def mask_to_bbox(mask: NDBoolMask, pad: int = 5):
+def update_full_mask_mp(
+    full_mask: Array, mask: NDBoolMask, x: int, y: int, w: int, h: int
+):
+    r"""
+    Update a portion of a large mask using a smaller mask.
+
+    Args:
+        full_mask: large mask to update.
+        mask: small mask to use for update.
+        x: x coordinate of top-left corner of `mask` on `full_mask`.
+        y: y coordinate of top-left corner of `mask` on `full_mask`.
+    """
+    p_h, p_w = mask.shape
+    dy = min(h, y + p_h) - y
+    dx = min(w, x + p_w) - x
+    for i in range(y, y + dy):
+        full_mask[i * w + x : i * w + x + dx] = mask[i - y, :dx]
+
+
+def merge_bboxes(
+    bboxes: List[List[int]], masks: List[NDBoolMask]
+) -> Tuple[List[List[int]], List[NDBoolMask]]:
+    n = len(bboxes)
+    for i in range(1, n):
+        for j in range(i):
+            if bboxes[j] is None:
+                continue
+            xi0, yi0, xi1, yi1 = bboxes[i]
+            xj0, yj0, xj1, yj1 = bboxes[j]
+
+            h = max(yi1, yj1) - min(yi0, yj0)
+            w = max(xi1, xj1) - min(xi0, xj0)
+            maski = np.zeros((h, w), dtype=bool)
+            maski[yi0:yi1, xi0:xi1] = 1
+            maskj = np.zeros((h, w), dtype=bool)
+            maskj[yj0:yj1, xj0:xj1] = 1
+
+            if (maski & maskj).sum():
+                bboxes[i] = [min(xi0, xj0), min(yi0, yj0), max(xi1, xj1), max(yi1, yj1)]
+                masks[i] = masks[i] | masks[j]
+
+                bboxes[j] = None
+                masks[j] = None
+    bboxes = [bbox for bbox in bboxes if bbox is not None]
+    masks = [mask for mask in masks if mask is not None]
+    return bboxes, masks
+
+
+def mask_to_bbox(mask: Union[NDBoolMask, torch.Tensor], pad: int = 5, min_size=10):
+    tensor = isinstance(mask, torch.Tensor)
     labels, n = label(mask, return_num=True)
     bboxes = []
     masks = []
+    h, w = mask.shape
 
     for i in range(1, n + 1):
         mask = labels == i
+        if mask.sum() < min_size:
+            continue
         ii, jj = np.nonzero(mask)
         y0, y1 = ii.min(), ii.max()
         x0, x1 = jj.min(), jj.max()
-        bboxes.append([x0 - pad, y0 - pad, x1 + pad, y1 + pad])
+        bboxes.append(
+            [
+                max(0, x0 - pad),
+                max(0, y0 - pad),
+                min(w - 1, x1 + pad),
+                min(h - 1, y1 + pad),
+            ]
+        )
         masks.append(mask)
-    return np.array(bboxes, dtype=np.float32), np.stack(masks).astype(np.uint8)
+    bboxes, masks = merge_bboxes(bboxes, masks)
+    bboxes, masks = np.array(bboxes, dtype=np.float32), np.stack(masks).astype(np.uint8)
+    if tensor:
+        bboxes, masks = torch.as_tensor(bboxes), torch.as_tensor(masks)
+    return bboxes, masks

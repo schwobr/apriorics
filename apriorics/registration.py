@@ -1,5 +1,6 @@
 from numbers import Number
 from os import PathLike
+import os
 from skimage.color import rgb2hed
 import cv2
 from skimage.util import img_as_ubyte, img_as_float
@@ -11,7 +12,6 @@ from skimage.morphology import (
     binary_dilation,
 )
 from skimage.measure import label
-from subprocess import run
 from pathlib import Path
 from skimage.io import imsave
 from pathaia.util.types import Coord
@@ -19,6 +19,7 @@ from apriorics.masks import get_dab_mask, get_tissue_mask
 from pathaia.util.types import Slide, NDBoolMask, Patch, NDByteGrayImage, NDByteImage
 from nptyping import NDArray
 from typing import Any, Callable, List, Sequence, Tuple, Union
+import docker
 
 
 def get_dot_mask(
@@ -285,7 +286,7 @@ def get_centroid(slide, thumb_size):
     ii, jj = get_tissue_mask(
         np.asarray(slide.get_thumbnail(thumb_size).convert("L"))
     ).nonzero()
-    centroid = (int(jj.mean()), int(ii.mean()))
+    centroid = (int(np.median(jj)), int(np.median(ii)))
     return centroid
 
 
@@ -427,7 +428,7 @@ def equalize_contrasts(
     return img_as_ubyte(he_H), img_as_ubyte(ihc_H)
 
 
-def convert_to_nifti(path: PathLike):
+def convert_to_nifti(base_path: PathLike, path: PathLike, container=None):
     r"""
     Runs c2d on the input image to turn into
     `HistoReg <https://github.com/CBICA/HistoReg>`_ compatible nifti.
@@ -436,14 +437,31 @@ def convert_to_nifti(path: PathLike):
         path: path to input image file.
     """
     path = Path(path)
-    base_dir = path.parent
-    path = Path(f"/data/inputs/{path.name}")
+    path = Path(f"/data/{path.relative_to(base_path)}")
+
+    if container is None:
+        client = docker.from_env()
+        container = client.containers.create(
+            "historeg",
+            "/bin/bash",
+            tty=True,
+            stdin_open=True,
+            auto_remove=False,
+            volumes=[f"{base_path}:/data"],
+        )
+        container.start()
     c2d_cmd = (
-        f"docker run -v {base_dir}:/data/inputs historeg "
         f"c2d -mcs {path} -foreach -orient LP -spacing 1x1mm -origin 0x0mm -endfor -omc"
         f" {path.with_suffix('.nii.gz')}"
     )
-    run(c2d_cmd.split())
+    with open(base_path / "log", "ab") as f:
+        # f.write(f"{datetime.now()} - converting {path.name} to nifti...\n")
+        res = container.exec_run(c2d_cmd, stream=True)
+        for chunk in res.output:
+            f.write(chunk)
+        # f.write(f"{datetime.now()} - conversion finished.\n")
+
+    return container
 
 
 def register(
@@ -453,8 +471,10 @@ def register(
     he_path: PathLike,
     ihc_path: PathLike,
     reg_path: PathLike,
+    container=None,
     iterations: int = 20000,
     resample: int = 4,
+    threads=0,
 ):
     r"""
     Registers IHC H image into H&E H image using
@@ -474,30 +494,55 @@ def register(
         lambda x: Path("/data") / x.relative_to(base_path),
         (he_H_path, ihc_H_path, he_path, ihc_path, reg_path),
     )
-    historeg_cmd = (
-        f"docker run -v {base_path}:/data historeg "
-        f"HistoReg -i {iterations} -r {resample} -s1 6 -s2 8 -f {he_H_path} -m "
-        f"{ihc_H_path} -o /data/historeg"
-    )
-    run(historeg_cmd.split())
 
-    tfm_path = Path(
-        f"/data/historeg/{ihc_H_path.stem}_registered_to_{he_H_path.stem}"
-        "/metrics/full_resolution"
-    )
-    greedy_cmd = (
-        f"docker run -v {base_path}:/data historeg "
-        f"greedy -d 2 -rf {he_path} -rm {ihc_path} {reg_path} -r "
-        f"{tfm_path/'big_warp.nii.gz'} {tfm_path/'Affine.mat'}"
-    )
-    run(greedy_cmd.split())
+    if container is None:
+        client = docker.from_env()
+        container = client.containers.create(
+            "historeg",
+            "/bin/bash",
+            tty=True,
+            stdin_open=True,
+            auto_remove=False,
+            volumes=[f"{base_path}:/data"],
+        )
+        container.start()
 
-    c2d_cmd = (
-        f"docker run -v {base_path}:/data historeg "
-        f"c2d -mcs {reg_path} -foreach -type uchar -endfor -omc "
-        f"{reg_path.with_suffix('').with_suffix('.png')}"
-    )
-    run(c2d_cmd.split())
+    with open(base_path / "log", "ab") as f:
+        historeg_cmd = (
+            f"HistoReg -i {iterations} -r {resample} -s1 6 -s2 8 --threads {threads} -f"
+            f" {he_H_path} -m {ihc_H_path} -o /data/historeg"
+        )
+        # f.write(f"{datetime.now()} - Starting HistoReg...\n")
+        res = container.exec_run(historeg_cmd, stream=True)
+        for chunk in res.output:
+            f.write(chunk)
+        # f.write(f"{datetime.now()} - HistoReg finished.\n")
+
+        tfm_path = Path(
+            f"/data/historeg/{ihc_H_path.stem}_registered_to_{he_H_path.stem}"
+            "/metrics/full_resolution"
+        )
+        greedy_cmd = (
+            f"greedy -d 2 -threads {threads} -rf {he_path} -rm {ihc_path} {reg_path} -r"
+            f" {tfm_path/'big_warp.nii.gz'} {tfm_path/'Affine.mat'}"
+        )
+        # f.write(f"{datetime.now()} - Starting Greedy...\n")
+        res = container.exec_run(greedy_cmd, stream=True)
+        for chunk in res.output:
+            f.write(chunk)
+        # f.write(f"{datetime.now()} - Greedy finished.\n")
+
+        c2d_cmd = (
+            f"c2d -mcs {reg_path} -foreach -type uchar -endfor -omc "
+            f"{reg_path.with_suffix('').with_suffix('.png')}"
+        )
+        # f.write(f"{datetime.now()} - Starting c2d...\n")
+        res = container.exec_run(c2d_cmd, stream=True)
+        for chunk in res.output:
+            f.write(chunk)
+        # f.write(f"{datetime.now()} - c2d finished.\n")
+
+    return container
 
 
 def full_registration(
@@ -509,6 +554,7 @@ def full_registration(
     dab_thr: float = 0.03,
     object_min_size: int = 1000,
     iterations: int = 20000,
+    threads=0,
 ) -> bool:
     r"""
     Perform full registration process on patches from an IHC slide and a H&E slide.
@@ -527,7 +573,11 @@ def full_registration(
     Return:
         True if registration was sucesfully performed, False otherwise.
     """
-    print(f"HE: {patch_he.position} / IHC: {patch_ihc.position}")
+    print(f"[{os.getpid()}] HE: {patch_he.position} / IHC: {patch_ihc.position}")
+
+    if not base_path.exists():
+        base_path.mkdir()
+
     he_H_path = base_path / "he_H.png"
     ihc_H_path = base_path / "ihc_H.png"
     he_path = base_path / "he.png"
@@ -541,13 +591,13 @@ def full_registration(
         has_enough_tissue(he_G, whitetol=247, area_thr=0.2)
         and has_enough_tissue(ihc_G, whitetol=247, area_thr=0.05)
     ):
-        print("Patch doesn't contain enough tissue, skipping.")
+        print(f"[{os.getpid()}] Patch doesn't contain enough tissue, skipping.")
         return False
 
     mask = get_dab_mask(ihc, dab_thr=dab_thr, object_min_size=object_min_size)
 
     if mask.sum() < object_min_size:
-        print("Mask would be empty, skipping.")
+        print(f"[{os.getpid()}] Mask would be empty, skipping.")
         return False
 
     # he_H, ihc_H = equalize_contrasts(he_H, ihc_H, he_G, ihc_G)
@@ -557,24 +607,29 @@ def full_registration(
 
     imsave(he_path, he)
     imsave(ihc_path, ihc)
-    convert_to_nifti(he_path)
-    convert_to_nifti(ihc_path)
+    container = convert_to_nifti(base_path, he_path)
+    container = convert_to_nifti(base_path, ihc_path, container=container)
 
-    print("Starting registration...")
+    print(f"[{os.getpid()}] Starting registration...")
 
     resample = int(100000 / patch_he.size[0])
 
-    register(
+    container = register(
         base_path,
         he_H_path,
         ihc_H_path,
         he_path.with_suffix(".nii.gz"),
         ihc_path.with_suffix(".nii.gz"),
         reg_path.with_suffix(".nii.gz"),
+        container=container,
         resample=resample,
         iterations=iterations,
+        threads=threads,
     )
 
-    print("Registration done...")
+    container.stop()
+    container.remove()
+
+    print(f"[{os.getpid()}] Registration done...")
 
     return True

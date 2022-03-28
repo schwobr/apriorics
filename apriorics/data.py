@@ -212,14 +212,18 @@ class DetectionDataset(Dataset):
         return transformed["image"], target
 
     def clean(self):
-        to_remove = []
+        patches = []
+        slide_idxs = []
+        idxs = []
         for i in range(len(self)):
-            if self[i] is None:
-                to_remove.append(i)
-        for i in to_remove:
-            self.patches.pop(i)
-            self.slide_idxs.pop(i)
-            self.n_pos.pop(i)
+            if self[i] is not None:
+                patches.append(self.patches[i])
+                slide_idxs.append(self.slide_idxs[i])
+                idxs.append(i)
+
+        self.patches = patches
+        self.slide_idxs = slide_idxs
+        self.n_pos = self.n_pos[idxs]
 
 
 class BalancedRandomSampler(RandomSampler):

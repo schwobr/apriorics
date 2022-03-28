@@ -164,6 +164,7 @@ class DetectionDataset(Dataset):
         self.stain_augmentor = stain_augmentor
         self.transforms = Compose(ifnone(transforms, []))
         self.min_size = min_size
+        self.clean()
 
     def __len__(self):
         return len(self.patches)
@@ -194,9 +195,14 @@ class DetectionDataset(Dataset):
             ]
 
         retransform = True
-        while retransform:
+        count = 0
+        while retransform and count < 10:
             transformed = self.transforms(image=slide_region, mask=mask_region)
             retransform = transformed["mask"].sum() < self.min_size
+            count += 1
+        if retransform:
+            return
+
         bboxes, masks = mask_to_bbox(transformed["mask"], pad=1, min_size=0)
         target = {
             "boxes": bboxes,
@@ -204,6 +210,16 @@ class DetectionDataset(Dataset):
             "labels": torch.ones(bboxes.shape[0], dtype=torch.int64),
         }
         return transformed["image"], target
+
+    def clean(self):
+        to_remove = []
+        for i in range(len(self)):
+            if self[i] is None:
+                to_remove.append(i)
+        for i in to_remove:
+            self.patches.pop(i)
+            self.slide_idxs.pop(i)
+            self.n_pos.pop(i)
 
 
 class BalancedRandomSampler(RandomSampler):
@@ -243,7 +259,7 @@ class BalancedRandomSampler(RandomSampler):
         idxs = []
         for k in range(self.num_samples):
             x = torch.rand(2, generator=self.generator)
-            cl = min(int(x[0] < self.p_pos), len(avail)-1)
+            cl = min(int(x[0] < self.p_pos), len(avail) - 1)
             cl_patches = avail[cl]
             idx = int(x[1] * len(cl_patches))
             if self.replacement:

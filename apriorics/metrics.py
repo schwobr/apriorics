@@ -1,6 +1,40 @@
 from typing import Optional
-from torchmetrics import CatMetric
+from torchmetrics import CatMetric, MetricCollection
 import torch
+from typing import Dict, Any
+
+
+@torch.jit.unused
+def _forward(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Iteratively call forward for each metric.
+
+    Positional arguments (args) will be passed to every metric in the collection, while
+    keyword arguments (kwargs) will be filtered based on the signature of the individual
+    metric.
+    """
+    res = {}
+    for k, m in self.items():
+        out = m(*args, **m._filter_kwargs(**kwargs))
+        if isinstance(out, dict):
+            res.update(out)
+        else:
+            res[k] = out
+    return res
+
+
+def _compute(self) -> Dict[str, Any]:
+    res = {}
+    for k, m in self.items():
+        out = m.compute()
+        if isinstance(out, dict):
+            res.update(out)
+        else:
+            res[k] = out
+    return res
+
+
+MetricCollection.forward = _forward
+MetricCollection.compute = _compute
 
 
 def _reduce(x: torch.Tensor, reduction: str = "mean") -> torch.Tensor:
@@ -73,6 +107,7 @@ class DiceScore(CatMetric):
         reduction: reduction method for computed dice scores. Can be one of "mean",
             "sum" or "none".
     """
+
     def __init__(self, smooth: float = 1, reduction: str = "mean", **kwargs):
         super().__init__(**kwargs)
         self.smooth = smooth

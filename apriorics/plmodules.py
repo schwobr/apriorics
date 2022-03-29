@@ -12,10 +12,11 @@ from torch.optim.lr_scheduler import (
 )
 from torchvision.utils import make_grid, draw_bounding_boxes, draw_segmentation_masks
 from torchvision.transforms.functional import to_pil_image
-from torchmetrics import Metric, MetricCollection
+from torchmetrics import Metric
 from pathaia.util.basic import ifnone
 
 from apriorics.losses import get_loss_name
+from apriorics.metrics import MetricCollection
 from apriorics.model_components.utils import named_leaf_modules
 from matplotlib.cm import rainbow
 
@@ -252,6 +253,7 @@ class BasicDetectionModule(pl.LightningModule):
         y: List[Dict[str, Tensor]],
         y_hat: List[Dict[str, Tensor]],
         batch_idx: int,
+        score_thr: float = 0.7,
     ):
         masks_gt = []
         masks_pred = []
@@ -261,36 +263,40 @@ class BasicDetectionModule(pl.LightningModule):
         for img, gt, pred in zip(x, y, y_hat):
             img = (img.cpu() * 255).byte()
 
+            idxs = pred["scores"] > score_thr
+            cmap = np.linspace(0, 1, len(idxs))
+            if len(cmap):
+                colors_preds = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
+            else:
+                colors_preds = None
+
             cmap = np.linspace(0, 1, len(gt["masks"]))
-            colors = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
+            if len(cmap):
+                colors_gt = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
+            else:
+                colors_gt = None
+
             masks_gt.append(
                 draw_segmentation_masks(
-                    img, gt["masks"].cpu().bool(), alpha=0.5, colors=colors
+                    img, gt["masks"].cpu().bool(), alpha=0.5, colors=colors_gt
                 )
             )
 
-            cmap = np.linspace(0, 1, len(pred["masks"]))
-            colors = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
+            masks = pred["masks"][idxs].cpu().squeeze(1) > 0.5
             masks_pred.append(
-                draw_segmentation_masks(
-                    img, pred["masks"].cpu().squeeze(1) > 0.5, alpha=0.5, colors=colors
-                )
+                draw_segmentation_masks(img, masks, alpha=0.5, colors=colors_preds)
             )
 
-            cmap = np.linspace(0, 1, len(gt["boxes"]))
-            colors = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
             boxes_gt.append(
-                draw_bounding_boxes(img, gt["boxes"].cpu(), width=2, colors=colors)
+                draw_bounding_boxes(img, gt["boxes"].cpu(), width=2, colors=colors_gt)
             )
 
-            boxes = pred["boxes"][pred["scores"] > 0.7].cpu()
-            labels = [
-                f"{score.item(): .2f}" for score in pred["scores"].cpu() if score > 0.7
-            ]
-            cmap = np.linspace(0, 1, len(boxes))
-            colors = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
+            boxes = pred["boxes"][idxs].cpu()
+            labels = [f"{score.item(): .2f}" for score in pred["scores"][idxs].cpu()]
             boxes_pred.append(
-                draw_bounding_boxes(img, boxes, width=2, colors=colors, labels=labels)
+                draw_bounding_boxes(
+                    img, boxes, width=2, colors=colors_preds, labels=labels
+                )
             )
 
         grid = make_grid(masks_gt + masks_pred + boxes_gt + boxes_pred, len(x))

@@ -232,7 +232,13 @@ class BasicDetectionModule(pl.LightningModule):
 
     def validation_epoch_end(self, outputs: Dict[str, Tensor]):
         self.log_dict(self.seg_metrics.compute(), sync_dist=True)
-        self.log_dict(self.det_metrics.compute(), sync_dist=True)
+        det_dict = self.det_metrics.compute()
+        det_dict = {
+            k: v
+            for k, v in det_dict.items()
+            if k.split("_")[-1] not in ("small", "medium", "large", "class")
+        }
+        self.log_dict(det_dict, sync_dist=True)
 
     def configure_optimizers(
         self,

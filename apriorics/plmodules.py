@@ -222,8 +222,10 @@ class BasicDetectionModule(pl.LightningModule):
         masks_pred = []
         masks_gt = []
         for gt, pred in zip(y, y_hat):
-            masks_pred.append(pred["masks"].squeeze(1).prod(0))
-            masks_gt.append(gt["masks"].prod(0))
+            masks_pred.append(
+                (pred["masks"].squeeze(1) * pred["scores"][:, None, None]).amax(0)
+            )
+            masks_gt.append(gt["masks"].amax(0))
         masks_pred = torch.stack(masks_pred)
         masks_gt = torch.stack(masks_gt)
 

@@ -242,6 +242,7 @@ if __name__ == "__main__":
         drop_last=True,
         sampler=sampler,
         collate_fn=_collate_fn,
+        persistent_workers=True
     )
     val_dl = DataLoader(
         val_ds,
@@ -250,6 +251,7 @@ if __name__ == "__main__":
         pin_memory=True,
         num_workers=args.num_workers,
         collate_fn=_collate_fn,
+        persistent_workers=True
     )
 
     scheduler_func = get_scheduler_func(

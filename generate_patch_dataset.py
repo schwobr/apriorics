@@ -70,6 +70,11 @@ parser.add_argument(
     default=0,
     help="Minimum number of positive pixels in mask to keep patch. Default 0.",
 )
+parser.add_argument(
+    "--overwrite",
+    action="store_true",
+    help="Specify to overwrite existing csvs. Optional.",
+)
 
 
 def get_mask_filter(mask, thumb_size=2000):
@@ -96,11 +101,20 @@ if __name__ == "__main__":
     interval = -int(args.overlap * args.patch_size)
 
     for in_file_path in input_files:
+        out_file_path = outfolder / in_file_path.relative_to(
+            args.slidefolder
+        ).with_suffix(".csv")
+        if not args.overwrite and out_file_path.exists():
+            continue
+        if not out_file_path.parent.exists():
+            out_file_path.parent.mkdir(parents=True)
+
         mask_path = args.maskfolder / in_file_path.relative_to(
             args.slidefolder
         ).with_suffix(".tif")
         if not mask_path.exists():
             continue
+
         slide = Slide(in_file_path, backend="cucim")
         mask = Slide(mask_path, backend="cucim")
         print(in_file_path.stem)
@@ -113,12 +127,6 @@ if __name__ == "__main__":
             slide_filters=[filter_thumbnail],
             thumb_size=2000,
         )
-
-        out_file_path = outfolder / in_file_path.relative_to(
-            args.slidefolder
-        ).with_suffix(".csv")
-        if not out_file_path.parent.exists():
-            out_file_path.parent.mkdir(parents=True)
 
         with open(out_file_path, "w") as out_file:
             writer = csv.DictWriter(out_file, fieldnames=Patch.get_fields() + ["n_pos"])

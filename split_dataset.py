@@ -87,5 +87,5 @@ if __name__ == "__main__":
 
     df = pd.DataFrame({"slide": maskfiles.map(lambda x: x.stem), "split": splits})
     if args.existing_csv is not None:
-        df = ex_df.concat(df, ignore_index=True)
+        df = pd.concat((ex_df, df), ignore_index=True)
     df.to_csv(args.out_csv, index=False)

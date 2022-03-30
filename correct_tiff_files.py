@@ -23,8 +23,10 @@ if __name__ == "__main__":
         )
 
     for input_file in input_files:
-        print(input_file.stem)
         mask = CuImage(str(input_file))
+        if len(mask.metadata["cucim"]["channel_names"]) == 3:
+            continue
+        print(input_file.stem)
         w, h = mask.size("XY")
         print("Computing mask")
         full_mask = np.zeros((h, w, 3), dtype=np.uint8)

@@ -261,7 +261,7 @@ class BalancedRandomSampler(RandomSampler):
         avail = [mask.nonzero()[0].tolist(), (~mask).nonzero()[0].tolist()]
         avail = [cl_patches for cl_patches in avail if cl_patches]
         idxs = []
-        for k in range(self.num_samples):
+        for _ in range(self.num_samples):
             x = torch.rand(2, generator=self.generator)
             cl = min(int(x[0] < self.p_pos), len(avail) - 1)
             cl_patches = avail[cl]

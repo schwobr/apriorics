@@ -65,7 +65,7 @@ def get_angle(v1: NDArray[(2,), Number], v2: NDArray[(2,), Number]) -> float:
     """
     v1 = v1 / np.linalg.norm(v1)
     v2 = v2 / np.linalg.norm(v2)
-    dot = np.dot(v1, v2)
+    dot = np.clip(np.dot(v1, v2), -1, 1)
     angle = np.arccos(dot) * np.sign((v2 - v1)[1])
     return angle
 

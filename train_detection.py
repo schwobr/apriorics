@@ -240,7 +240,6 @@ if __name__ == "__main__":
             FixedCropAroundMaskIfExists(args.patch_size, args.patch_size),
             ToTensor(),
         ],
-        slide_backend="openslide",
     )
 
     sampler = BalancedRandomSampler(train_ds, p_pos=1)

@@ -14,7 +14,7 @@ from albumentations import (
     Flip,
     Transpose,
     RandomBrightnessContrast,
-    CropNonEmptyMaskIfExists,
+    RandomCrop,
     CenterCrop,
 )
 from pathaia.util.paths import get_files
@@ -212,7 +212,7 @@ if __name__ == "__main__":
         stain_matrices_paths = None
 
     transforms = [
-        CropNonEmptyMaskIfExists(args.patch_size, args.patch_size),
+        RandomCrop(args.patch_size, args.patch_size),
         Flip(),
         Transpose(),
         RandomRotate90(),

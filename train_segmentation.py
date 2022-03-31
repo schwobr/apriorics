@@ -316,7 +316,7 @@ if __name__ == "__main__":
         monitor=f"val_loss_{args.loss}",
         save_last=True,
         mode="min",
-        filename="{epoch}-{val_loss:.3f}",
+        filename=f"{{epoch}}-{{val_loss_{args.loss}:.3f}}",
     )
 
     trainer = pl.Trainer(

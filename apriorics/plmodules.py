@@ -216,7 +216,7 @@ class BasicDetectionModule(pl.LightningModule):
         x, y = batch
         y_hat = self(x)
 
-        if batch_idx % 100 == 0:
+        if batch_idx % 100 == 0 and self.trainer.training_type_plugin.global_rank == 0:
             self.log_images(x, y, y_hat, batch_idx)
 
         masks_pred = []

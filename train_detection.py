@@ -45,8 +45,9 @@ IHCS = [
 
 parser = ArgumentParser(
     prog=(
-        "Train a segmentation model for a specific IHC. Should be called as "
-        "horovodrun -np n_gpus python train_segmentation.py."
+        "Train a detection model for a specific IHC (PHH3). To train on multiple gpus, "
+        "should be called as `horovodrun -np n_gpus python train_detection.py "
+        "--horovod`."
     )
 )
 parser.add_argument(
@@ -94,7 +95,15 @@ parser.add_argument(
     required=True,
 )
 parser.add_argument(
-    "--gpus", type=int, default=1, help="Number of gpus to use. Default 1."
+    "--gpu",
+    type=int,
+    default=0,
+    help="GPU index to used when not using horovod. Default 0.",
+)
+parser.add_argument(
+    "--horovod",
+    action="store_true",
+    help="Specify when using script with horovodrun. Optional.",
 )
 parser.add_argument(
     "--batch-size",
@@ -177,7 +186,9 @@ def _collate_fn(batch):
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    hvd.init()
+
+    if args.horovod:
+        hvd.init()
 
     seed_everything(workers=True)
 
@@ -256,7 +267,7 @@ if __name__ == "__main__":
 
     scheduler_func = get_scheduler_func(
         args.scheduler,
-        total_steps=ceil(len(train_dl) / (args.grad_accumulation * args.gpus))
+        total_steps=ceil(len(train_dl) / (args.grad_accumulation))
         * args.epochs,
         lr=args.lr,
     )
@@ -287,9 +298,8 @@ if __name__ == "__main__":
         auto_metric_logging=False,
     )
 
-    if hvd.rank() == 0:
+    if not args.horovod or hvd.rank() == 0:
         logger.experiment.add_tag(args.ihc_type)
-        logger.log_graph(plmodule)
 
     ckpt_callback = ModelCheckpoint(
         save_top_k=3,
@@ -300,14 +310,14 @@ if __name__ == "__main__":
     )
 
     trainer = pl.Trainer(
-        gpus=args.gpus,
+        gpus=1 if args.horovod else [args.gpu],
         min_epochs=args.epochs,
         max_epochs=args.epochs,
         logger=logger,
         precision=16,
         accumulate_grad_batches=args.grad_accumulation,
         callbacks=[ckpt_callback],
-        # strategy="horovod",
+        strategy="horovod" if args.horovod else None,
     )
 
     if args.resume_version is not None:

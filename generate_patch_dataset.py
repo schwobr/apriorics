@@ -92,9 +92,7 @@ if __name__ == "__main__":
     input_files = get_files(args.slidefolder, extensions=".svs", recurse=args.recurse)
     if args.file_filter is not None:
         filter_regex = re.compile(args.file_filter)
-        input_files = filter(
-            lambda x: filter_regex.match(x.name) is not None, input_files
-        )
+        input_files = input_files.filter(lambda x: filter_regex.match(x.name))
 
     outfolder = args.outfolder / f"{args.patch_size}_{args.level}/patch_csvs"
 

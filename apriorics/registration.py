@@ -257,12 +257,20 @@ def get_affine_transform(
     """
     fixed_vert = get_vertices(fixed, centroid_fixed)
     moving_vert = get_vertices(moving, centroid_moving)
-    if len(fixed_vert) != len(moving_vert):
-        equalize_vert_lengths(fixed_vert, moving_vert, centroid_fixed, centroid_moving)
-    while len(fixed_vert) > 4:
-        fixed_vert.pop()
-    while len(moving_vert) > 4:
-        moving_vert.pop()
+
+    if not (len(fixed_vert) and len(moving_vert)):
+        fixed_vert = [centroid_fixed]
+        moving_vert = [centroid_moving]
+    else:
+        if len(fixed_vert) != len(moving_vert):
+            equalize_vert_lengths(
+                fixed_vert, moving_vert, centroid_fixed, centroid_moving
+            )
+        while len(fixed_vert) > 4:
+            fixed_vert.pop()
+        while len(moving_vert) > 4:
+            moving_vert.pop()
+
     fixed_vert = np.array(fixed_vert)
     moving_vert = np.array(moving_vert)
 

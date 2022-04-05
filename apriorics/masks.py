@@ -264,12 +264,13 @@ def merge_bboxes(
             xi0, yi0, xi1, yi1 = bboxes[i]
             xj0, yj0, xj1, yj1 = bboxes[j]
 
-            h = max(yi1, yj1) - min(yi0, yj0)
-            w = max(xi1, xj1) - min(xi0, xj0)
+            x0, y0, x1, y1 = min(xi0, xj0), min(yi0, yj0), max(xi1, xj1), max(yi1, yj1)
+            h = y1 - y0
+            w = x1 - x0
             maski = np.zeros((h, w), dtype=bool)
-            maski[yi0:yi1, xi0:xi1] = 1
+            maski[yi0 - y0 : yi1 - y0, xi0 - x0 : xi1 - x0] = 1
             maskj = np.zeros((h, w), dtype=bool)
-            maskj[yj0:yj1, xj0:xj1] = 1
+            maskj[yj0 - y0 : yj1 - y0, xj0 - x0 : xj1 - x0] = 1
 
             if (maski & maskj).sum():
                 bboxes[i] = [min(xi0, xj0), min(yi0, yj0), max(xi1, xj1), max(yi1, yj1)]

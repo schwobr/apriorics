@@ -14,7 +14,7 @@ from albumentations import (
     Flip,
     Transpose,
     RandomBrightnessContrast,
-    CropNonEmptyMaskIfExists,
+    RandomCrop,
     CenterCrop,
 )
 from pathaia.util.paths import get_files
@@ -42,8 +42,9 @@ IHCS = [
 
 parser = ArgumentParser(
     prog=(
-        "Train a segmentation model for a specific IHC. Should be called as "
-        "horovodrun -np n_gpus python train_segmentation.py."
+        "Train a segmentation model for a specific IHC. To train on multiple gpus, "
+        "should be called as `horovodrun -np n_gpus python train_segmentation.py "
+        "--horovod`."
     )
 )
 parser.add_argument(
@@ -99,7 +100,15 @@ parser.add_argument(
     required=True,
 )
 parser.add_argument(
-    "--gpus", type=int, default=1, help="Number of gpus to use. Default 1."
+    "--gpu",
+    type=int,
+    default=0,
+    help="GPU index to used when not using horovod. Default 0.",
+)
+parser.add_argument(
+    "--horovod",
+    action="store_true",
+    help="Specify when using script with horovodrun. Optional.",
 )
 parser.add_argument(
     "--batch-size",
@@ -185,7 +194,8 @@ parser.add_argument(
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    hvd.init()
+    if args.horovod:
+        hvd.init()
 
     seed_everything(workers=True)
 
@@ -212,7 +222,7 @@ if __name__ == "__main__":
         stain_matrices_paths = None
 
     transforms = [
-        CropNonEmptyMaskIfExists(args.patch_size, args.patch_size),
+        RandomCrop(args.patch_size, args.patch_size),
         Flip(),
         Transpose(),
         RandomRotate90(),
@@ -253,8 +263,7 @@ if __name__ == "__main__":
 
     scheduler_func = get_scheduler_func(
         args.scheduler,
-        total_steps=ceil(len(train_dl) / (args.grad_accumulation * args.gpus))
-        * args.epochs,
+        total_steps=ceil(len(train_dl) / (args.grad_accumulation)) * args.epochs,
         lr=args.lr,
     )
 
@@ -299,33 +308,31 @@ if __name__ == "__main__":
         auto_metric_logging=False,
     )
 
-    if hvd.rank() == 0:
+    if not args.horovod or hvd.rank() == 0:
         logger.experiment.add_tag(args.ihc_type)
-        logger.log_graph(plmodule)
 
     ckpt_callback = ModelCheckpoint(
         save_top_k=3,
         monitor=f"val_loss_{args.loss}",
         save_last=True,
         mode="min",
-        filename="{epoch}-{val_loss:.3f}",
+        filename=f"{{epoch}}-{{val_loss_{args.loss}:.3f}}",
     )
 
     trainer = pl.Trainer(
-        gpus=1,
+        gpus=1 if args.horovod else [args.gpu],
         min_epochs=args.epochs,
         max_epochs=args.epochs,
         logger=logger,
         precision=16,
         accumulate_grad_batches=args.grad_accumulation,
         callbacks=[ckpt_callback],
-        strategy="horovod",
+        strategy="horovod" if args.horovod else None,
     )
 
     if args.resume_version is not None:
         ckpt_path = (
-            args.logfolder
-            / f"apriorics/{args.resume_version}/checkpoints/last.ckpt"
+            args.logfolder / f"apriorics/{args.resume_version}/checkpoints/last.ckpt"
         )
         checkpoint = torch.load(ckpt_path)
         missing, unexpected = plmodule.load_state_dict(

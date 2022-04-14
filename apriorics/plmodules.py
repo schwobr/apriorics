@@ -222,9 +222,18 @@ class BasicDetectionModule(pl.LightningModule):
         masks_pred = []
         masks_gt = []
         for gt, pred in zip(y, y_hat):
-            masks_pred.append(
-                (pred["masks"].squeeze(1) * pred["scores"][:, None, None]).amax(0)
-            )
+            if pred["masks"].shape[0]:
+                masks_pred.append(
+                    (pred["masks"].squeeze(1) * pred["scores"][:, None, None]).amax(0)
+                )
+            else:
+                masks_pred.append(
+                    torch.zeros(
+                        x.shape[-2:],
+                        dtype=pred["masks"].dtype,
+                        device=pred["masks"].device,
+                    )
+                )
             masks_gt.append(gt["masks"].amax(0))
         masks_pred = torch.stack(masks_pred)
         masks_gt = torch.stack(masks_gt)
@@ -272,7 +281,7 @@ class BasicDetectionModule(pl.LightningModule):
             img = (img.cpu() * 255).byte()
 
             idxs = pred["scores"] > score_thr
-            cmap = np.linspace(0, 1, len(idxs))
+            cmap = np.linspace(0, 1, idxs.sum())
             if len(cmap):
                 colors_preds = [(r, g, b) for r, g, b, _ in rainbow(cmap, bytes=True)]
             else:

@@ -79,7 +79,9 @@ def reduce_polygon(
     return Polygon(ext_poly_coords, interior_coords)
 
 
-def mask_to_polygons_layer(mask: NDBoolMask) -> MultiPolygon:
+def mask_to_polygons_layer(
+    mask: NDBoolMask, angle_th: float = 2, distance_th: float = 3
+) -> MultiPolygon:
     """
     Convert mask array into :class:`shapely.geometry.MultiPolygon`.
 
@@ -92,7 +94,9 @@ def mask_to_polygons_layer(mask: NDBoolMask) -> MultiPolygon:
     """
     all_polygons = []
     for sh, _ in features.shapes(mask.astype(np.int16), mask=(mask > 0)):
-        all_polygons.append(reduce_polygon(shape(sh), angle_th=2, distance_th=3))
+        all_polygons.append(
+            reduce_polygon(shape(sh), angle_th=angle_th, distance_th=distance_th)
+        )
 
     all_polygons = MultiPolygon(all_polygons)
     if not all_polygons.is_valid:

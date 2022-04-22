@@ -280,3 +280,34 @@ class BalancedRandomSampler(RandomSampler):
 
     def __len__(self) -> int:
         return self.num_samples
+
+
+class TestDataset(Dataset):
+    def __init__(
+        self,
+        slide_path: PathLike,
+        patches_path: PathLike,
+        transforms: Optional[Sequence[BasicTransform]] = None,
+        slide_backend: str = "cucim",
+    ):
+        self.slide = Slide(slide_path, backend=slide_backend)
+        self.patches = []
+        with open(patches_path, "r") as patch_file:
+            reader = csv.DictReader(patch_file)
+            for patch in reader:
+                self.patches.append(Patch.from_csv_row(patch))
+        self.transforms = Compose(ifnone(transforms, []))
+
+    def __len__(self):
+        return len(self.patches)
+
+    def __getitem__(self, idx):
+        patch = self.patches[idx]
+        slide_region = np.asarray(
+            self.slide.read_region(patch.position, patch.level, patch.size).convert(
+                "RGB"
+            )
+        )
+
+        transformed = self.transforms(image=slide_region)
+        return transformed["image"]

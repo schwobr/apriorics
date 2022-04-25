@@ -119,6 +119,12 @@ parser.add_argument(
         "variable. Optional."
     ),
 )
+parser.add_argument(
+    "--area-threshold",
+    type=int,
+    default=50,
+    help="Minimum area of objects to keep. Default 50.",
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -195,8 +201,12 @@ if __name__ == "__main__":
                     polygon, xoff=patch.position.x + x1, yoff=patch.position.y + y1
                 )
 
-                if isinstance(polygon, Polygon) or isinstance(polygon, MultiPolygon):
+                if isinstance(polygon, Polygon) and polygon.area > args.area_threshold:
                     polygons.append(polygon)
+                elif isinstance(polygon, MultiPolygon):
+                    for pol in polygon.geoms:
+                        if pol.area > args.area_threshold:
+                            polygons.append(pol)
         polygons = unary_union(polygons)
-        with open(args.outfolder/f"{slide_path.stem}_pred.geojson", "w") as f:
+        with open(args.outfolder / f"{slide_path.stem}_pred.geojson", "w") as f:
             json.dump(geopandas.GeoSeries(polygons.geoms).__geo_interface__, f)

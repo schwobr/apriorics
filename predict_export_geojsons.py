@@ -187,7 +187,7 @@ if __name__ == "__main__":
 
         polygons = []
         for batch_idx, x in tqdm(enumerate(dl), total=len(dl)):
-            y = model(x.to(device)).squeeze(1).cpu().numpy() > 0.5
+            y = torch.sigmoid(model(x.to(device))).squeeze(1).cpu().numpy() > 0.5
             for k, mask in enumerate(y):
                 if not mask.sum():
                     continue
@@ -208,5 +208,7 @@ if __name__ == "__main__":
                         if pol.area > args.area_threshold:
                             polygons.append(pol)
         polygons = unary_union(polygons)
+        if isinstance(polygons, Polygon):
+            polygons = MultiPolygon(polygons=[polygons])
         with open(args.outfolder / f"{slide_path.stem}_pred.geojson", "w") as f:
             json.dump(geopandas.GeoSeries(polygons.geoms).__geo_interface__, f)

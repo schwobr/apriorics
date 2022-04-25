@@ -4,6 +4,7 @@ import json
 from pathaia.util.paths import get_files
 import geopandas
 from pathlib import Path
+from shapely.geometry import Polygon, MultiPolygon
 
 
 parser = ArgumentParser("Transforms wkt files into geojson format.")
@@ -29,6 +30,8 @@ if __name__ == "__main__":
         print(wktfile.stem)
         with open(wktfile, "r") as f:
             polygons = wkt.load(f)
+        if isinstance(polygons, Polygon):
+            polygons = MultiPolygon(polygons=[polygons])
 
         with open(
             args.geojsonfolder

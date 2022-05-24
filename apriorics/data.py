@@ -1,14 +1,16 @@
+import csv
 from os import PathLike
-from typing import Iterator, List, Sequence, Optional, Tuple, Union
+from typing import Iterator, List, Optional, Sequence, Tuple, Union
+
 import numpy as np
 import torch
-from torch.utils.data import Dataset, RandomSampler
-from pathaia.util.types import Slide, Patch
+from albumentations import BasicTransform, Compose
 from pathaia.util.basic import ifnone
-from albumentations import Compose, BasicTransform
+from pathaia.util.types import Patch, Slide
+from torch.utils.data import Dataset, RandomSampler
+
 from apriorics.masks import mask_to_bbox
 from apriorics.transforms import StainAugmentor
-import csv
 
 
 class SegmentationDataset(Dataset):

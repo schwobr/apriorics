@@ -1,7 +1,8 @@
-from apriorics.cytomine import upload_image_to_cytomine, get_uploaded_images
 from argparse import ArgumentParser
+
 from pathaia.util.paths import get_files
 
+from apriorics.cytomine import get_uploaded_images, upload_image_to_cytomine
 
 IHC_MAPPING = {
     13: "AE1AE3",

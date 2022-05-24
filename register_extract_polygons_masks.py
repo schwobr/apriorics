@@ -1,23 +1,20 @@
+import shutil
 from argparse import ArgumentParser
 from pathlib import Path
 from subprocess import run
-from pathaia.patches import slide_rois_no_image
-from pathaia.util.types import Slide, Coord
-from pathaia.util.paths import get_files
-from PIL import Image
+
 import numpy as np
-from pathaia.util.types import Patch
+from ordered_set import OrderedSet
+from pathaia.patches import slide_rois_no_image
+from pathaia.util.paths import get_files
+from pathaia.util.types import Coord, Patch, Slide
+from PIL import Image
 from shapely.affinity import translate
 from shapely.ops import unary_union
-import shutil
-from apriorics.registration import (
-    full_registration,
-    get_coord_transform,
-)
-from apriorics.masks import get_tissue_mask, get_mask_function, update_full_mask
-from apriorics.polygons import mask_to_polygons_layer
-from ordered_set import OrderedSet
 
+from apriorics.masks import get_mask_function, get_tissue_mask, update_full_mask
+from apriorics.polygons import mask_to_polygons_layer
+from apriorics.registration import full_registration, get_coord_transform
 
 IHC_MAPPING = {
     13: "AE1AE3",

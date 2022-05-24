@@ -1,7 +1,9 @@
-from apriorics.polygons import hovernet_to_wkt
-from pathaia.util.paths import get_files
 from argparse import ArgumentParser
 from pathlib import Path
+
+from pathaia.util.paths import get_files
+
+from apriorics.polygons import hovernet_to_wkt
 
 parser = ArgumentParser(prog="Converts json files outputted by hovernet to wkt.")
 parser.add_argument(

@@ -1,6 +1,8 @@
-from typing import Tuple, Sequence
+from typing import Sequence, Tuple
+
 import torch
 import torch.nn as nn
+
 from apriorics.metrics import _flatten, _reduce, dice_score
 
 
@@ -137,6 +139,7 @@ class FocalLoss(nn.Module):
             equivalent to binary cros-sentropy. When `gamma` increases, highly
             misclassified predictions will have higher weight.
     """
+
     def __init__(self, beta: float = 0.5, gamma: float = 2.0, reduction: str = "mean"):
         super().__init__()
         self.beta = beta
@@ -159,6 +162,7 @@ class DiceLoss(nn.Module):
         reduction: reduction method for computed dice scores. Can be one of "mean",
             "sum" or "none".
     """
+
     def __init__(self, smooth=1, reduction="mean"):
         super().__init__()
         self.smooth = smooth
@@ -177,6 +181,7 @@ class SumLosses(nn.Module):
         *losses_with_coef: tuples containg a loss function and a float corresponding to
             the coefficient to use for the weighted sum of the losses.
     """
+
     def __init__(self, *losses_with_coef: Sequence[Tuple[nn.Module, float]]):
         super().__init__()
         self.losses_with_coef = losses_with_coef

@@ -1,9 +1,17 @@
 from typing import Any, Optional, Tuple
+
 import numpy as np
-from torch import nn
+import timm
 import torch
 import torch.nn.functional as F
-import timm
+from nptyping import NDArray
+from torch import nn
+
+from apriorics.model_components.axialnet import (
+    AxialBlock,
+    AxialBlock_dynamic,
+    AxialBlock_wopos,
+)
 from apriorics.model_components.convolution import (
     ConvBnRelu,
     LastCross,
@@ -14,12 +22,6 @@ from apriorics.model_components.decoder_blocks import DecoderBlock, PixelShuffle
 from apriorics.model_components.hooks import Hooks
 from apriorics.model_components.normalization import bc_norm, group_norm
 from apriorics.model_components.utils import get_sizes
-from apriorics.model_components.axialnet import (
-    AxialBlock,
-    AxialBlock_dynamic,
-    AxialBlock_wopos,
-)
-from nptyping import NDArray
 
 
 class CBR(nn.Module):
@@ -110,7 +112,7 @@ class DynamicUnet(nn.Module):
         img_chan: int = 3,
         pretrained: bool = True,
         norm_layer: Optional[nn.Module] = None,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         if norm_layer is None:
@@ -222,7 +224,7 @@ class ResAxialAttentionUNet(nn.Module):
         s=0.125,
         img_size=128,
         imgchan=3,
-        **kwargs
+        **kwargs,
     ):
         super(ResAxialAttentionUNet, self).__init__()
         if norm_layer is None:
@@ -292,9 +294,7 @@ class ResAxialAttentionUNet(nn.Module):
         )
         self.soft = nn.Softmax(dim=1)
 
-    def _make_layer(
-        self, block, planes, blocks, kernel_size=56, stride=1
-    ):
+    def _make_layer(self, block, planes, blocks, kernel_size=56, stride=1):
         norm_layer = self._norm_layer
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
@@ -392,7 +392,7 @@ class MedTNet(nn.Module):
         s=0.125,
         img_size=128,
         imgchan=3,
-        **kwargs
+        **kwargs,
     ):
         super(MedTNet, self).__init__()
         if norm_layer is None:
@@ -461,25 +461,13 @@ class MedTNet(nn.Module):
             block_2, int(128 * s), layers[0], kernel_size=(img_size_p // 2)
         )
         self.layer2_p = self._make_layer(
-            block_2,
-            int(256 * s),
-            layers[1],
-            stride=2,
-            kernel_size=(img_size_p // 2)
+            block_2, int(256 * s), layers[1], stride=2, kernel_size=(img_size_p // 2)
         )
         self.layer3_p = self._make_layer(
-            block_2,
-            int(512 * s),
-            layers[2],
-            stride=2,
-            kernel_size=(img_size_p // 4)
+            block_2, int(512 * s), layers[2], stride=2, kernel_size=(img_size_p // 4)
         )
         self.layer4_p = self._make_layer(
-            block_2,
-            int(1024 * s),
-            layers[3],
-            stride=2,
-            kernel_size=(img_size_p // 8)
+            block_2, int(1024 * s), layers[3], stride=2, kernel_size=(img_size_p // 8)
         )
 
         # Decoder
@@ -507,9 +495,7 @@ class MedTNet(nn.Module):
         )
         self.soft_p = nn.Softmax(dim=1)
 
-    def _make_layer(
-        self, block, planes, blocks, kernel_size=56, stride=1
-    ):
+    def _make_layer(self, block, planes, blocks, kernel_size=56, stride=1):
         norm_layer = self._norm_layer
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:

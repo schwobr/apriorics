@@ -1,7 +1,7 @@
-from typing import Optional
-from torchmetrics import CatMetric, MetricCollection
+from typing import Any, Dict, Optional
+
 import torch
-from typing import Dict, Any
+from torchmetrics import CatMetric, MetricCollection
 
 
 @torch.jit.unused

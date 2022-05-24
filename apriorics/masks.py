@@ -1,19 +1,20 @@
 from multiprocessing import Array
-from typing import Callable, Optional, Union, List, Tuple
-from skimage.filters import threshold_otsu
+from typing import Callable, List, Optional, Tuple, Union
+
+import numpy as np
+import torch
+from pathaia.util.types import NDBoolMask, NDByteGrayImage, NDImage
+from PIL.Image import Image
+from scipy import ndimage as ndi
 from skimage.color import rgb2hed, rgb2hsv
+from skimage.filters import threshold_otsu
 from skimage.morphology import (
-    remove_small_holes,
-    remove_small_objects,
     binary_closing,
     disk,
     label,
+    remove_small_holes,
+    remove_small_objects,
 )
-import numpy as np
-from pathaia.util.types import NDImage, NDByteGrayImage, NDBoolMask
-from PIL.Image import Image
-from scipy import ndimage as ndi
-import torch
 
 
 def remove_large_objects(ar, max_size=1000, connectivity=1):

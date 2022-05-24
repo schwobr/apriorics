@@ -1,8 +1,8 @@
 from argparse import ArgumentParser
 from pathlib import Path
-from pathaia.util.paths import get_files
 from subprocess import run
 
+from pathaia.util.paths import get_files
 
 parser = ArgumentParser(
     prog=(

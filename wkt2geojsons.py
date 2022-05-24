@@ -1,11 +1,11 @@
-from argparse import ArgumentParser
-from shapely import wkt
 import json
-from pathaia.util.paths import get_files
-import geopandas
+from argparse import ArgumentParser
 from pathlib import Path
-from shapely.geometry import Polygon, MultiPolygon
 
+import geopandas
+from pathaia.util.paths import get_files
+from shapely import wkt
+from shapely.geometry import MultiPolygon, Polygon
 
 parser = ArgumentParser("Transforms wkt files into geojson format.")
 parser.add_argument(

@@ -1,18 +1,19 @@
 import random
-from albumentations.core.transforms_interface import DualTransform, ImageOnlyTransform
-from albumentations import CropNonEmptyMaskIfExists
-import numpy as np
-from pathaia.util.basic import ifnone
-from typing import Callable, Optional, Any, List, Sequence, Tuple, Dict
-from nptyping import NDArray
 from numbers import Number
-from staintools.miscellaneous.optical_density_conversion import convert_RGB_to_OD
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+
+import numpy as np
 import spams
+import torch
+from albumentations import CropNonEmptyMaskIfExists
+from albumentations.core.transforms_interface import DualTransform, ImageOnlyTransform
+from nptyping import NDArray
+from pathaia.util.basic import ifnone
+from pathaia.util.types import NDByteImage, NDGrayImage, NDImage
+from skimage.morphology import label, remove_small_holes, remove_small_objects
+from staintools.miscellaneous.optical_density_conversion import convert_RGB_to_OD
 from staintools.stain_extraction.vahadane_stain_extractor import VahadaneStainExtractor
 from torchvision.transforms.functional import to_tensor
-import torch
-from pathaia.util.types import NDImage, NDGrayImage, NDByteImage
-from skimage.morphology import label, remove_small_holes, remove_small_objects
 
 
 class ToSingleChannelMask(DualTransform):

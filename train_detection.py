@@ -1,35 +1,32 @@
-from pytorch_lightning.loggers import CometLogger
-import horovod.torch as hvd
+import os
 from argparse import ArgumentParser
 from math import ceil
 from pathlib import Path
-from apriorics.plmodules import get_scheduler_func, BasicDetectionModule
-from apriorics.data import DetectionDataset, BalancedRandomSampler
-from apriorics.transforms import (
-    ToTensor,
-    StainAugmentor,
-    RandomCropAroundMaskIfExists,
-    FixedCropAroundMaskIfExists,
-    CorrectCompression,
-)
-from apriorics.metrics import DiceScore
-from albumentations import (
-    RandomRotate90,
-    Flip,
-    Transpose,
-    RandomBrightnessContrast,
-)
-from pathaia.util.paths import get_files
+
+import horovod.torch as hvd
 import pandas as pd
-from torchmetrics import JaccardIndex, Precision, Recall, Specificity, Accuracy
-from torchmetrics.detection.map import MeanAveragePrecision
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
-import os
 import torch
-from torch.utils.data import DataLoader
+from albumentations import Flip, RandomBrightnessContrast, RandomRotate90, Transpose
+from pathaia.util.paths import get_files
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import CometLogger
 from pytorch_lightning.utilities.seed import seed_everything
+from torch.utils.data import DataLoader
+from torchmetrics import Accuracy, JaccardIndex, Precision, Recall, Specificity
+from torchmetrics.detection.map import MeanAveragePrecision
 from torchvision.models.detection import maskrcnn_resnet50_fpn
+
+from apriorics.data import BalancedRandomSampler, DetectionDataset
+from apriorics.metrics import DiceScore
+from apriorics.plmodules import BasicDetectionModule, get_scheduler_func
+from apriorics.transforms import (
+    CorrectCompression,
+    FixedCropAroundMaskIfExists,
+    RandomCropAroundMaskIfExists,
+    StainAugmentor,
+    ToTensor,
+)
 
 IHCS = [
     "AE1AE3",
@@ -252,7 +249,7 @@ if __name__ == "__main__":
         drop_last=True,
         sampler=sampler,
         collate_fn=_collate_fn,
-        persistent_workers=True
+        persistent_workers=True,
     )
     val_dl = DataLoader(
         val_ds,
@@ -261,13 +258,12 @@ if __name__ == "__main__":
         pin_memory=True,
         num_workers=args.num_workers,
         collate_fn=_collate_fn,
-        persistent_workers=True
+        persistent_workers=True,
     )
 
     scheduler_func = get_scheduler_func(
         args.scheduler,
-        total_steps=ceil(len(train_dl) / (args.grad_accumulation))
-        * args.epochs,
+        total_steps=ceil(len(train_dl) / (args.grad_accumulation)) * args.epochs,
         lr=args.lr,
     )
 

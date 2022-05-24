@@ -1,12 +1,13 @@
+import re
 from argparse import ArgumentParser
 from pathlib import Path
-from cucim import CuImage
-import numpy as np
-import re
-from pathaia.util.paths import get_files
 from subprocess import run
+
 import cv2
-from skimage.morphology import remove_small_objects, remove_small_holes
+import numpy as np
+from cucim import CuImage
+from pathaia.util.paths import get_files
+from skimage.morphology import remove_small_holes, remove_small_objects
 
 parser = ArgumentParser()
 parser.add_argument("--infolder", type=Path)

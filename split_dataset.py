@@ -1,12 +1,12 @@
-from argparse import ArgumentParser
 import os
-from pathlib import Path
-from pathaia.util.paths import get_files
-import numpy as np
-from numpy.random import default_rng
-import pandas as pd
 import re
+from argparse import ArgumentParser
+from pathlib import Path
 
+import numpy as np
+import pandas as pd
+from numpy.random import default_rng
+from pathaia.util.paths import get_files
 
 parser = ArgumentParser(prog="Splits a dataset between train and validation slides. ")
 parser.add_argument(

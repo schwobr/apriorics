@@ -1,26 +1,26 @@
+import json
 from argparse import ArgumentParser
 from pathlib import Path
 
-from tqdm import tqdm
-from apriorics.model_components.normalization import group_norm
-from apriorics.plmodules import BasicSegmentationModule
-from apriorics.data import TestDataset
-from apriorics.polygons import mask_to_polygons_layer
-from apriorics.transforms import ToTensor
+import geopandas
+import pandas as pd
+import torch
 from albumentations import CenterCrop
 from albumentations.augmentations.crops.functional import get_center_crop_coords
 from pathaia.util.paths import get_files
-import pandas as pd
-import torch
-from torch.utils.data import DataLoader
-from timm import create_model
 from pytorch_lightning.utilities.seed import seed_everything
 from shapely.affinity import translate
+from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import unary_union
-from shapely.geometry import Polygon, MultiPolygon
-import json
-import geopandas
+from timm import create_model
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
+from apriorics.data import TestDataset
+from apriorics.model_components.normalization import group_norm
+from apriorics.plmodules import BasicSegmentationModule
+from apriorics.polygons import mask_to_polygons_layer
+from apriorics.transforms import ToTensor
 
 IHCS = [
     "AE1AE3",

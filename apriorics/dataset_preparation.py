@@ -1,7 +1,8 @@
+from math import ceil
 from typing import Any, Dict, Optional, Sequence, Union
+
 import numpy as np
 from nptyping import NDArray
-from math import ceil
 
 
 def split_data_k_fold(

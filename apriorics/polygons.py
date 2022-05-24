@@ -1,13 +1,14 @@
-from os import PathLike
-import numpy as np
-from shapely.geometry import Polygon, MultiPolygon, shape
-from shapely.affinity import affine_transform
-from rasterio import features
 import json
-from nptyping import NDArray
-from typing import Any, Optional
 from numbers import Number
+from os import PathLike
+from typing import Any, Optional
+
+import numpy as np
+from nptyping import NDArray
 from pathaia.util.types import NDBoolMask
+from rasterio import features
+from shapely.affinity import affine_transform
+from shapely.geometry import MultiPolygon, Polygon, shape
 
 
 def get_reduced_coords(

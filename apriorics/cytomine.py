@@ -1,19 +1,21 @@
 from os import PathLike
 from pathlib import Path
 from typing import List, Optional
+
+import shapely
+from shapely.geometry import MultiPolygon
+
 from cytomine import Cytomine
 from cytomine.models import (
     Annotation,
     AnnotationCollection,
     AnnotationTerm,
-    TermCollection,
     ImageInstanceCollection,
-    StorageCollection,
     Project,
+    StorageCollection,
+    TermCollection,
 )
 from cytomine.models.collection import CollectionPartialUploadException
-import shapely
-from shapely.geometry import MultiPolygon
 
 
 def get_image_id(slidename: str, id_project: int) -> int:

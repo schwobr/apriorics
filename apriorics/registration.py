@@ -1,25 +1,23 @@
+import os
 from numbers import Number
 from os import PathLike
-import os
-from skimage.color import rgb2hed
-import cv2
-from skimage.util import img_as_ubyte, img_as_float
-import numpy as np
-from skimage.morphology import (
-    remove_small_holes,
-    remove_small_objects,
-    binary_closing,
-    binary_dilation,
-)
-from skimage.measure import label
 from pathlib import Path
-from skimage.io import imsave
-from pathaia.util.types import Coord
-from apriorics.masks import get_dab_mask, get_tissue_mask
-from pathaia.util.types import Slide, NDBoolMask, Patch, NDByteGrayImage, NDByteImage
-from nptyping import NDArray
 from typing import Any, Callable, List, Sequence, Tuple, Union
+
+import cv2
 import docker
+import numpy as np
+from nptyping import NDArray
+from pathaia.util.types import (Coord, NDBoolMask, NDByteGrayImage,
+                                NDByteImage, Patch, Slide)
+from skimage.color import rgb2hed
+from skimage.io import imsave
+from skimage.measure import label
+from skimage.morphology import (binary_closing, binary_dilation,
+                                remove_small_holes, remove_small_objects)
+from skimage.util import img_as_float, img_as_ubyte
+
+from apriorics.masks import get_dab_mask, get_tissue_mask
 
 
 def get_dot_mask(

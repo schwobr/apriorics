@@ -1,8 +1,8 @@
-from argparse import ArgumentParser
-import comet_ml
-from pathlib import Path
 import shutil
+from argparse import ArgumentParser
+from pathlib import Path
 
+import comet_ml
 
 parser = ArgumentParser(prog="Clears logs from experiments that are archived on comet.")
 parser.add_argument("--logfolder", type=Path, required=True)

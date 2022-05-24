@@ -1,24 +1,25 @@
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+
 import numpy as np
 import pytorch_lightning as pl
-from typing import List, Optional, Dict, Callable, Sequence, Tuple, Union
-from torch import Tensor, nn
-from torch.optim import Optimizer, AdamW
 import torch
+from matplotlib.cm import rainbow
+from pathaia.util.basic import ifnone
+from torch import Tensor, nn
+from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import (
-    OneCycleLR,
     CosineAnnealingLR,
+    OneCycleLR,
     ReduceLROnPlateau,
     _LRScheduler,
 )
-from torchvision.utils import make_grid, draw_bounding_boxes, draw_segmentation_masks
-from torchvision.transforms.functional import to_pil_image
 from torchmetrics import Metric
-from pathaia.util.basic import ifnone
+from torchvision.transforms.functional import to_pil_image
+from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks, make_grid
 
 from apriorics.losses import get_loss_name
 from apriorics.metrics import MetricCollection
 from apriorics.model_components.utils import named_leaf_modules
-from matplotlib.cm import rainbow
 
 
 def get_scheduler_func(

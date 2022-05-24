@@ -1,15 +1,15 @@
 import csv
 import re
-from pathlib import Path
 from argparse import ArgumentParser
-from pathaia.util.types import Patch, Slide
-from pathaia.util.paths import get_files
-from pathaia.patches.functional_api import slide_rois_no_image
-from pathaia.patches import filter_thumbnail
-import numpy as np
-from skimage.transform import resize
-from skimage.morphology import remove_small_objects
+from pathlib import Path
 
+import numpy as np
+from pathaia.patches import filter_thumbnail
+from pathaia.patches.functional_api import slide_rois_no_image
+from pathaia.util.paths import get_files
+from pathaia.util.types import Patch, Slide
+from skimage.morphology import remove_small_objects
+from skimage.transform import resize
 
 parser = ArgumentParser(prog="Generates the PathAIA patch CSVs for slides.")
 parser.add_argument(

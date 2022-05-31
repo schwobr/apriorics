@@ -17,7 +17,7 @@ parser.add_argument(
 parser.add_argument(
     "--recurse",
     action="store_true",
-    help="Specify to recurse through slidefolder when looking for svs files. Optional.",
+    help="Specify to recurse through wktfolder when looking for wkt files. Optional.",
 )
 
 
@@ -33,9 +33,12 @@ if __name__ == "__main__":
         if isinstance(polygons, Polygon):
             polygons = MultiPolygon(polygons=[polygons])
 
-        with open(
-            args.geojsonfolder
-            / wktfile.relative_to(args.wktfolder).with_suffix(".geojson"),
-            "w",
-        ) as f:
+        outfile = args.geojsonfolder / wktfile.relative_to(args.wktfolder).with_suffix(
+            ".geojson"
+        )
+
+        if not outfile.parent.exists():
+            outfile.parent.mkdir(parents=True)
+
+        with open(outfile, "w") as f:
             json.dump(geopandas.GeoSeries(polygons.geoms).__geo_interface__, f)

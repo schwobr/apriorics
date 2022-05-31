@@ -15,8 +15,7 @@ from PIL import Image
 from shapely.affinity import translate
 from shapely.ops import unary_union
 
-from apriorics.masks import (get_mask_function, get_tissue_mask,
-                             update_full_mask_mp)
+from apriorics.masks import get_mask_function, get_tissue_mask, update_full_mask_mp
 from apriorics.polygons import mask_to_polygons_layer
 from apriorics.registration import full_registration, get_coord_transform
 
@@ -192,6 +191,14 @@ if __name__ == "__main__":
         lambda x: int(x.stem.split("-")[-1].split("_")[0]) == k + 12
     )
     ihcfiles.sort(key=lambda x: x.stem.split("-")[0])
+
+    henames = OrderedSet(hefiles.map(lambda x: x.stem))
+    ihcnames = OrderedSet(ihcfiles.map(lambda x: x.stem))
+    inter = henames & ihcnames
+    heidxs = henames.index(inter)
+    ihcidxs = ihcnames.index(inter)
+    hefiles = hefiles[heidxs]
+    ihcfiles = ihcfiles[ihcidxs]
 
     filefilter = get_filefilter(args.slidefile)
     idxs = filefilter(hefiles)

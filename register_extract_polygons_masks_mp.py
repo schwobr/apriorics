@@ -192,8 +192,8 @@ if __name__ == "__main__":
     )
     ihcfiles.sort(key=lambda x: x.stem.split("-")[0])
 
-    henames = OrderedSet(hefiles.map(lambda x: x.stem))
-    ihcnames = OrderedSet(ihcfiles.map(lambda x: x.stem))
+    henames = OrderedSet(hefiles.map(lambda x: x.stem.split("-")[0]))
+    ihcnames = OrderedSet(ihcfiles.map(lambda x: x.stem.split("-")[0]))
     inter = henames & ihcnames
     heidxs = henames.index(inter)
     ihcidxs = ihcnames.index(inter)

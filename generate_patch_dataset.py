@@ -93,6 +93,7 @@ if __name__ == "__main__":
     if args.file_filter is not None:
         filter_regex = re.compile(args.file_filter)
         input_files = input_files.filter(lambda x: filter_regex.match(x.name))
+    input_files.sort(key=lambda x: x.stem)
 
     outfolder = args.outfolder / f"{args.patch_size}_{args.level}/patch_csvs"
 

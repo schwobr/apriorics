@@ -58,22 +58,22 @@ parser.add_argument(
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    maskfiles = get_files(
+    patchfiles = get_files(
         args.patch_csv_folder, extensions=".csv", recurse=args.recurse
     )
 
     if args.file_filter is not None:
         filter_regex = re.compile(args.file_filter)
-        maskfiles = maskfiles.filter(lambda x: filter_regex.match(x.name) is not None)
+        patchfiles = patchfiles.filter(lambda x: filter_regex.match(x.name) is not None)
 
-    n = len(maskfiles)
+    n = len(patchfiles)
     n_train = int(args.train_ratio * n)
 
     if args.existing_csv is not None:
         ex_df = pd.read_csv(args.existing_csv)
         n_train -= (ex_df["split"] == "train").sum()
-        maskfiles = maskfiles.filter(lambda x: x.stem not in ex_df["slide"].values)
-        n = len(maskfiles)
+        patchfiles = patchfiles.filter(lambda x: x.stem not in ex_df["slide"].values)
+        n = len(patchfiles)
 
     if args.seed is None:
         args.seed = os.environ.get("PL_GLOBAL_SEED")
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     splits = np.full(n, "valid")
     splits[train_idxs] = "train"
 
-    df = pd.DataFrame({"slide": maskfiles.map(lambda x: x.stem), "split": splits})
+    df = pd.DataFrame({"slide": patchfiles.map(lambda x: x.stem), "split": splits})
     if args.existing_csv is not None:
         df = pd.concat((ex_df, df), ignore_index=True)
     df.to_csv(args.out_csv, index=False)

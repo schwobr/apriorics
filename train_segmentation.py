@@ -13,6 +13,7 @@ from albumentations import (
     RandomBrightnessContrast,
     RandomCrop,
     RandomRotate90,
+    RandomScale,
     Transpose,
 )
 from pathaia.util.paths import get_files
@@ -137,7 +138,13 @@ parser.add_argument(
     "--patch-size",
     type=int,
     default=1024,
-    help="Size of the patches used foor training. Default 1024.",
+    help="Size of the input patches used during training. Default 1024.",
+)
+parser.add_argument(
+    "--base-size",
+    type=int,
+    default=1024,
+    help="Size of the original extracted patches. Default 1024.",
 )
 parser.add_argument(
     "--num-workers",
@@ -224,6 +231,7 @@ if __name__ == "__main__":
         stain_matrices_paths = None
 
     transforms = [
+        RandomScale(scale_limit=(max(0.9, args.patch_size / args.base_size), 1.1)),
         RandomCrop(args.patch_size, args.patch_size),
         Flip(),
         Transpose(),

@@ -107,8 +107,8 @@ def get_concentrations(
 class StainAugmentor(ImageOnlyTransform):
     def __init__(
         self,
-        alpha_range: float = 0.3,
-        beta_range: float = 0.2,
+        alpha_range: float = 0.2,
+        beta_range: float = 0.1,
         alpha_stain_range: float = 0.3,
         beta_stain_range: float = 0.2,
         he_ratio: float = 0.3,

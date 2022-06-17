@@ -8,6 +8,7 @@ from albumentations import BasicTransform, Compose
 from pathaia.util.basic import ifnone
 from pathaia.util.types import Patch, Slide
 from torch.utils.data import Dataset, RandomSampler
+from tqdm import tqdm
 
 from apriorics.masks import mask_to_bbox
 from apriorics.transforms import StainAugmentor
@@ -253,8 +254,9 @@ class BalancedRandomSampler(RandomSampler):
             return num_samples
         else:
             n_pos = (self.data_source.n_pos > 0).sum()
-            max_avail = int(
-                self.p_pos * n_pos + (1 - self.p_pos) * (len(self.data_source) - n_pos)
+            max_avail = min(
+                int(n_pos / self.p_pos),
+                int((len(self.data_source) - n_pos) / (1 - self.p_pos)),
             )
             return min(num_samples, max_avail)
 
@@ -263,8 +265,16 @@ class BalancedRandomSampler(RandomSampler):
         avail = [mask.nonzero()[0].tolist(), (~mask).nonzero()[0].tolist()]
         avail = [cl_patches for cl_patches in avail if cl_patches]
         idxs = []
-        for _ in range(self.num_samples):
-            x = torch.rand(2, generator=self.generator)
+        num_samples = self.num_samples
+        p = torch.rand(num_samples, 2, generator=self.generator)
+        print("\nLoading sampler idxs...")
+        for k in tqdm(range(num_samples), total=num_samples):
+            if len(avail) == 1:
+                cl_patches = avail[0]
+                idx = torch.multinomial(torch.ones(len(cl_patches)), num_samples - k)
+                idxs.extend([cl_patches[i] for i in idx])
+                break
+            x = p[k]
             cl = min(int(x[0] < self.p_pos), len(avail) - 1)
             cl_patches = avail[cl]
             idx = int(x[1] * len(cl_patches))
@@ -275,7 +285,8 @@ class BalancedRandomSampler(RandomSampler):
                 if len(cl_patches) == 0:
                     avail.pop(cl)
             idxs.append(patch)
-        return idxs
+        assert len(idxs) == len(self)
+        return np.random.permutation(idxs)
 
     def __iter__(self) -> Iterator[int]:
         return iter(self.get_idxs())

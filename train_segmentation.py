@@ -13,7 +13,6 @@ from albumentations import (
     RandomBrightnessContrast,
     RandomCrop,
     RandomRotate90,
-    RandomScale,
     Transpose,
 )
 from pathaia.util.paths import get_files
@@ -29,7 +28,8 @@ from apriorics.losses import get_loss
 from apriorics.metrics import DiceScore
 from apriorics.model_components.normalization import group_norm
 from apriorics.plmodules import BasicSegmentationModule, get_scheduler_func
-from apriorics.transforms import StainAugmentor, ToTensor
+from apriorics.stain_augment import StainAugmentor
+from apriorics.transforms import ToTensor
 
 IHCS = [
     "AE1AE3",
@@ -202,6 +202,7 @@ parser.add_argument(
 )
 
 if __name__ == "__main__":
+    __spec__ = None
     args = parser.parse_args()
     if args.horovod:
         hvd.init()
@@ -219,6 +220,7 @@ if __name__ == "__main__":
     )
 
     split_df = pd.read_csv(args.split_csv).sort_values("slide")
+    split_df = split_df.loc[split_df["slide"].isin(patches_paths.map(lambda x: x.stem))]
     train_idxs = (split_df["split"] == "train").values
     val_idxs = ~train_idxs
 
@@ -231,7 +233,6 @@ if __name__ == "__main__":
         stain_matrices_paths = None
 
     transforms = [
-        RandomScale(scale_limit=(max(0.9, args.patch_size / args.base_size), 1.1)),
         RandomCrop(args.patch_size, args.patch_size),
         Flip(),
         Transpose(),
@@ -244,7 +245,6 @@ if __name__ == "__main__":
         mask_paths[train_idxs],
         patches_paths[train_idxs],
         stain_matrices_paths,
-        stain_augmentor=StainAugmentor() if args.augment_stain else None,
         transforms=transforms,
     )
     val_ds = SegmentationDataset(
@@ -305,6 +305,7 @@ if __name__ == "__main__":
             Recall(),
             Specificity(),
         ],
+        stain_augmentor=StainAugmentor() if args.augment_stain else None,
     )
 
     if args.freeze_encoder:

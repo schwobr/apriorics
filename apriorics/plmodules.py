@@ -88,6 +88,7 @@ class BasicSegmentationModule(pl.LightningModule):
         wd: float,
         scheduler_func: Optional[Callable] = None,
         metrics: Optional[Sequence[Metric]] = None,
+        stain_augmentor: Optional[nn.Module] = None,
     ):
         super().__init__()
         self.model = model
@@ -96,14 +97,21 @@ class BasicSegmentationModule(pl.LightningModule):
         self.wd = wd
         self.scheduler_func = scheduler_func
         self.metrics = MetricCollection(ifnone(metrics, []))
+        self.stain_augmentor = stain_augmentor
 
     def forward(self, x: Tensor) -> Tensor:
         return self.model(x).squeeze(1)
 
     def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
         x, y = batch
+        if self.stain_augmentor is not None:
+            with torch.autocast("cuda", enabled=False):
+                x = self.stain_augmentor(x)
         y_hat = self(x)
         loss = self.loss(y_hat, y)
+
+        if batch_idx == 0 and self.trainer.training_type_plugin.global_rank == 0:
+            self.log_images(x, y, y_hat, batch_idx, step="train")
 
         self.log(f"train_loss_{get_loss_name(self.loss)}", loss)
         if self.sched is not None:
@@ -120,7 +128,7 @@ class BasicSegmentationModule(pl.LightningModule):
 
         y_hat = torch.sigmoid(y_hat)
         if batch_idx % 100 == 0 and self.trainer.training_type_plugin.global_rank == 0:
-            self.log_images(x, y, y_hat, batch_idx)
+            self.log_images(x, y, y_hat, batch_idx, step="val")
 
         self.metrics(y_hat, y.int())
 
@@ -140,14 +148,16 @@ class BasicSegmentationModule(pl.LightningModule):
             self.sched = self.scheduler_func(self.opt)
             return {"optimizer": self.opt, "lr_scheduler": self.sched}
 
-    def log_images(self, x: Tensor, y: Tensor, y_hat: Tensor, batch_idx: int):
+    def log_images(
+        self, x: Tensor, y: Tensor, y_hat: Tensor, batch_idx: int, step="val"
+    ):
         y = y[:, None].repeat(1, 3, 1, 1)
         y_hat = y_hat[:, None].repeat(1, 3, 1, 1)
         sample_imgs = torch.cat((x, y, y_hat))
         grid = make_grid(sample_imgs, y.shape[0])
         self.logger.experiment.log_image(
             to_pil_image(grid),
-            f"val_image_sample_{self.current_epoch}_{batch_idx}",
+            f"{step}_image_sample_{self.current_epoch}_{batch_idx}",
             step=self.current_epoch,
         )
 

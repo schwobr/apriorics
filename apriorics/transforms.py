@@ -2,24 +2,24 @@ import random
 from numbers import Number
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-import cupy as cp
 import numpy as np
 import spams
 import torch
 from albumentations import CropNonEmptyMaskIfExists
 from albumentations.core.transforms_interface import DualTransform, ImageOnlyTransform
-from cucim.core.operations.color.stain_normalizer import (
-    _get_raw_concentrations,
-    _image_to_absorbance_matrix,
-    _normalized_from_concentrations,
-    stain_extraction_pca,
-)
 from nptyping import NDArray
 from pathaia.util.basic import ifnone
 from pathaia.util.types import NDByteImage, NDGrayImage, NDImage
 from skimage.morphology import label, remove_small_holes, remove_small_objects
 from staintools.miscellaneous.optical_density_conversion import convert_RGB_to_OD
 from torchvision.transforms.functional import to_tensor
+
+from apriorics.stain_augment import (
+    _get_raw_concentrations,
+    _image_to_absorbance_matrix,
+    _normalized_from_concentrations,
+    stain_extraction_pca,
+)
 
 
 class ToSingleChannelMask(DualTransform):
@@ -113,6 +113,7 @@ class StainAugmentor(ImageOnlyTransform):
         beta_stain_range: float = 0.2,
         he_ratio: float = 0.3,
         always_apply: bool = True,
+        device="cpu",
         p: float = 1,
     ):
         super(StainAugmentor, self).__init__(always_apply, p)
@@ -121,35 +122,36 @@ class StainAugmentor(ImageOnlyTransform):
         self.alpha_stain_range = alpha_stain_range
         self.beta_stain_range = beta_stain_range
         self.he_ratio = he_ratio
+        self.device = device
 
     def get_params(self):
         return {
-            "alpha": cp.random.uniform(
+            "alpha": np.random.uniform(
                 1 - self.alpha_range, 1 + self.alpha_range, size=2
             ),
-            "beta": cp.random.uniform(-self.beta_range, self.beta_range, size=2),
+            "beta": np.random.uniform(-self.beta_range, self.beta_range, size=2),
             "alpha_stain": np.stack(
                 (
-                    cp.random.uniform(
+                    np.random.uniform(
                         1 - self.alpha_stain_range * self.he_ratio,
                         1 + self.alpha_stain_range * self.he_ratio,
                         size=3,
                     ),
-                    cp.random.uniform(
+                    np.random.uniform(
                         1 - self.alpha_stain_range,
                         1 + self.alpha_stain_range,
                         size=3,
                     ),
                 ),
             ),
-            "beta_stain": cp.stack(
+            "beta_stain": np.stack(
                 (
-                    cp.random.uniform(
+                    np.random.uniform(
                         -self.beta_stain_range * self.he_ratio,
                         self.beta_stain_range * self.he_ratio,
                         size=3,
                     ),
-                    cp.random.uniform(
+                    np.random.uniform(
                         -self.beta_stain_range, self.beta_stain_range, size=3
                     ),
                 ),
@@ -162,8 +164,8 @@ class StainAugmentor(ImageOnlyTransform):
         beta: Optional[NDArray[(Any, ...), float]],
         shape: Tuple[int, ...] = 2,
     ) -> Tuple[NDArray[(Any, ...)], NDArray[(Any, ...)]]:
-        alpha = ifnone(cp.asarray(alpha), cp.ones(shape))
-        beta = ifnone(cp.asarray(beta), cp.zeros(shape))
+        alpha = ifnone(np.asarray(alpha), np.ones(shape))
+        beta = ifnone(np.asarray(beta), np.zeros(shape))
         return alpha, beta
 
     def apply(
@@ -178,30 +180,39 @@ class StainAugmentor(ImageOnlyTransform):
         **params
     ) -> NDArray[(Any, Any, 3), Number]:
         image, stain_matrix = image_and_stain
-        image = cp.asarray(image)
+        image = to_tensor(image).to(self.device) * 255
         alpha, beta = self.initialize(alpha, beta, shape=2)
         alpha_stain, beta_stain = self.initialize(alpha_stain, beta_stain, shape=(2, 3))
 
-        absorbance = _image_to_absorbance_matrix(image, channel_axis=2)
+        alpha = torch.as_tensor(alpha, dtype=image.dtype, device=self.device)
+        beta = torch.as_tensor(beta, dtype=image.dtype, device=self.device)
+        alpha_stain = torch.as_tensor(
+            alpha_stain, dtype=image.dtype, device=self.device
+        )
+        beta_stain = torch.as_tensor(beta_stain, dtype=image.dtype, device=self.device)
+
+        absorbance = _image_to_absorbance_matrix(image, channel_axis=0)
         if stain_matrix is None:
             stain_matrix = stain_extraction_pca(
                 absorbance, image_type="absorbance", channel_axis=0
             )
         else:
-            stain_matrix = cp.asarray(stain_matrix)
-        if not image.dtype == np.uint8:
-            image = (image * 255).astype(np.uint8)
+            stain_matrix = torch.as_tensor(
+                stain_matrix, device=self.device, dtype=image.dtype
+            )
 
         HE = _get_raw_concentrations(stain_matrix, absorbance)
         stain_matrix = (stain_matrix.T * alpha_stain + beta_stain).T
-        stain_matrix = cp.clip(stain_matrix, 0, 1)
-        HE = cp.where(HE > 0.2, (HE.T * alpha[None] + beta[None]).T, HE)
-        max_conc = cp.concatenate(
-            [cp.percentile(ch_raw, 99)[np.newaxis] for ch_raw in HE]
+        stain_matrix = torch.clip(stain_matrix, 0, 1)
+        HE = torch.where(HE > 0.2, (HE.T * alpha[None] + beta[None]).T, HE)
+        max_conc = torch.cat([torch.quantile(ch_raw, 0.99)[None] for ch_raw in HE])
+        out = (
+            _normalized_from_concentrations(
+                HE, 99, stain_matrix, max_conc, 240, image.shape, 2
+            )
+            .cpu()
+            .numpy()
         )
-        out = _normalized_from_concentrations(
-            HE, 99, stain_matrix, max_conc, 240, image.shape, 2
-        ).get()
         return out.astype(np.float32) / 255
 
     def get_transform_init_args_names(self) -> List[str]:

@@ -22,4 +22,6 @@ if __name__ == "__main__":
 
     for jsonfile in jsonfiles:
         wktfile = args.wktfolder / f"{jsonfile.stem}.wkt"
+        if wktfile.exists():
+            continue
         hovernet_to_wkt(jsonfile, wktfile)

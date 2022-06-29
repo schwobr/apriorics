@@ -1,6 +1,7 @@
 import csv
 import re
 from argparse import ArgumentParser
+from multiprocessing import Pool
 from pathlib import Path
 
 import numpy as np
@@ -75,6 +76,11 @@ parser.add_argument(
     action="store_true",
     help="Specify to overwrite existing csvs. Optional.",
 )
+parser.add_argument(
+    "--num-workers",
+    type=int,
+    help="Number of workers to use for processing. Defaults to all available workers.",
+)
 
 
 def get_mask_filter(mask, thumb_size=2000):
@@ -99,12 +105,12 @@ if __name__ == "__main__":
 
     interval = -int(args.overlap * args.patch_size)
 
-    for in_file_path in input_files:
+    def write_patches(in_file_path):
         out_file_path = outfolder / in_file_path.relative_to(
             args.slidefolder
         ).with_suffix(".csv")
         if not args.overwrite and out_file_path.exists():
-            continue
+            return
         if not out_file_path.parent.exists():
             out_file_path.parent.mkdir(parents=True)
 
@@ -112,7 +118,7 @@ if __name__ == "__main__":
             args.slidefolder
         ).with_suffix(".tif")
         if not mask_path.exists():
-            continue
+            return
 
         slide = Slide(in_file_path, backend="cucim")
         mask = Slide(mask_path, backend="cucim")
@@ -136,7 +142,7 @@ if __name__ == "__main__":
                         "1"
                     )
                 )
-                if args.filter_pos:
+                if args.filter_pos and patch_mask.sum():
                     patch_mask = remove_small_objects(
                         patch_mask, min_size=args.filter_pos
                     )
@@ -145,3 +151,8 @@ if __name__ == "__main__":
                 row["n_pos"] = n_pos
                 if n_pos >= args.filter_pos:
                     writer.writerow(row)
+
+    with Pool(processes=args.num_workers) as pool:
+        pool.map(write_patches, input_files)
+        pool.close()
+        pool.join()

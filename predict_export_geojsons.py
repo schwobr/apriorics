@@ -5,7 +5,7 @@ from pathlib import Path
 import geopandas
 import pandas as pd
 import torch
-from albumentations import CenterCrop
+from albumentations import Crop
 from albumentations.augmentations.crops.functional import get_center_crop_coords
 from pathaia.util.paths import get_files
 from pytorch_lightning.utilities.seed import seed_everything
@@ -95,7 +95,16 @@ parser.add_argument(
     "--patch-size",
     type=int,
     default=1024,
-    help="Size of the patches used foor training. Default 1024.",
+    help="Size of the patches used for training. Default 1024.",
+)
+parser.add_argument(
+    "--base-size",
+    type=int,
+    default=1024,
+    help=(
+        "Size of the patches used before crop for training. Must be greater or equal "
+        "to patch_size. Default 1024."
+    ),
 )
 parser.add_argument(
     "--num-workers",
@@ -139,6 +148,7 @@ if __name__ == "__main__":
     )
 
     split_df = pd.read_csv(args.split_csv).sort_values("slide")
+    split_df = split_df.loc[split_df["slide"].isin(patches_paths.map(lambda x: x.stem))]
     train_idxs = (split_df["split"] == "train").values
     val_idxs = ~train_idxs
 
@@ -170,43 +180,63 @@ if __name__ == "__main__":
     checkpoint = torch.load(ckpt_path)
     missing, unexpected = model.load_state_dict(checkpoint["state_dict"], strict=False)
 
+    if args.patch_size < args.base_size:
+        interval = int(0.3 * args.patch_size)
+        max_coord = args.base_size - args.patch_size
+        crops = []
+        for x in range(0, max_coord + 1, interval):
+            for y in range(0, max_coord + 1, interval):
+                crops.append((x, y, x + args.patch_size, y + args.patch_size))
+            if max_coord % interval != 0:
+                crops.append((x, max_coord, x + args.patch_size, args.base_size))
+                crops.append((max_coord, x, args.base_size, x + args.patch_size))
+        if max_coord % interval != 0:
+            crops.append((max_coord, max_coord, args.base_size, args.base_size))
+    else:
+        crops = [(0, 0, args.base_size, args.base_size)]
+
     for slide_path, patches_path in zip(slide_paths[val_idxs], patches_paths[val_idxs]):
         print(slide_path.stem)
-        ds = TestDataset(
-            slide_path,
-            patches_path,
-            [CenterCrop(args.patch_size, args.patch_size), ToTensor()],
-        )
-        dl = DataLoader(
-            ds,
-            batch_size=args.batch_size,
-            shuffle=False,
-            num_workers=args.num_workers,
-            pin_memory=True,
-        )
-
         polygons = []
-        for batch_idx, x in tqdm(enumerate(dl), total=len(dl)):
-            y = torch.sigmoid(model(x.to(device))).squeeze(1).cpu().numpy() > 0.5
-            for k, mask in enumerate(y):
-                if not mask.sum():
-                    continue
-                idx = batch_idx * args.batch_size + k
-                patch = ds.patches[idx]
-                polygon = mask_to_polygons_layer(mask, angle_th=0, distance_th=0)
-                x1, y1, _, _ = get_center_crop_coords(
-                    patch.size.y, patch.size.x, args.patch_size, args.patch_size
-                )
-                polygon = translate(
-                    polygon, xoff=patch.position.x + x1, yoff=patch.position.y + y1
-                )
+        for crop in crops:
+            print(crop)
+            ds = TestDataset(
+                slide_path,
+                patches_path,
+                [Crop(*crop), ToTensor()],
+            )
+            dl = DataLoader(
+                ds,
+                batch_size=args.batch_size,
+                shuffle=False,
+                num_workers=args.num_workers,
+                pin_memory=True,
+            )
 
-                if isinstance(polygon, Polygon) and polygon.area > args.area_threshold:
-                    polygons.append(polygon)
-                elif isinstance(polygon, MultiPolygon):
-                    for pol in polygon.geoms:
-                        if pol.area > args.area_threshold:
-                            polygons.append(pol)
+            for batch_idx, x in tqdm(enumerate(dl), total=len(dl)):
+                y = torch.sigmoid(model(x.to(device))).squeeze(1).cpu().numpy() > 0.5
+                for k, mask in enumerate(y):
+                    if not mask.sum():
+                        continue
+                    idx = batch_idx * args.batch_size + k
+                    patch = ds.patches[idx]
+                    polygon = mask_to_polygons_layer(mask, angle_th=0, distance_th=0)
+                    x1, y1, _, _ = get_center_crop_coords(
+                        patch.size.y, patch.size.x, args.patch_size, args.patch_size
+                    )
+                    polygon = translate(
+                        polygon, xoff=patch.position.x + x1, yoff=patch.position.y + y1
+                    )
+
+                    if (
+                        isinstance(polygon, Polygon)
+                        and polygon.area > args.area_threshold
+                    ):
+                        polygons.append(polygon)
+                    elif isinstance(polygon, MultiPolygon):
+                        for pol in polygon.geoms:
+                            if pol.area > args.area_threshold:
+                                polygons.append(pol)
         polygons = unary_union(polygons)
         if isinstance(polygons, Polygon):
             polygons = MultiPolygon(polygons=[polygons])

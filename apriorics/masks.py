@@ -10,6 +10,7 @@ from skimage.color import rgb2hed, rgb2hsv
 from skimage.filters import threshold_otsu
 from skimage.morphology import (
     binary_closing,
+    binary_dilation,
     disk,
     label,
     remove_small_holes,
@@ -112,6 +113,16 @@ def get_dab_mask(
     return mask
 
 
+def get_mask_ink(img):
+    mask = np.ones(img.shape[:2], dtype=bool)
+    ranges = [(56, 98), (69, 119), (117, 160)]
+    for c, r in enumerate(ranges):
+        a, b = r
+        mask &= (img[..., c] > a) & (img[..., c] < b)
+    mask = binary_dilation(remove_small_objects(mask, min_size=50), disk(15))
+    return mask
+
+
 def get_mask_AE1AE3(
     he: Union[Image, NDImage], ihc: Union[Image, NDImage]
 ) -> NDBoolMask:
@@ -178,12 +189,14 @@ def get_mask_PHH3(he: Union[Image, NDImage], ihc: Union[Image, NDImage]) -> NDBo
     ihc = np.asarray(ihc)
     ihc_DAB = rgb2hed(ihc)[:, :, 2]
     ihc_s = rgb2hsv(ihc)[:, :, 1]
+
+    mask_he1 = (he_H > 0.06) & (he_H < 0.14) & (he_hue > 0.67)
+    mask_he2 = get_mask_ink(he)
     mask_he = remove_small_objects(
-        remove_small_holes(
-            (he_H > 0.06) & (he_H < 0.14) & (he_hue > 0.69), area_threshold=50
-        ),
+        remove_small_holes(mask_he1 & ~mask_he2, area_threshold=50),
         min_size=50,
     )
+
     mask_ihc = remove_small_objects(
         remove_small_holes((ihc_DAB > 0.04) & (ihc_s > 0.1), area_threshold=50),
         min_size=50,

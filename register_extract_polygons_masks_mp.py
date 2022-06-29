@@ -238,7 +238,8 @@ if __name__ == "__main__":
                 size_0=patch_he.size_0,
             )
 
-            base_path = args.tmpfolder / str(os.getpid())
+            pid = str(os.get_pid())
+            base_path = args.tmpfolder / pid
             if not base_path.exists():
                 base_path.mkdir()
 
@@ -278,7 +279,7 @@ if __name__ == "__main__":
             if restart:
                 return
 
-            print(f"[{os.getpid()}] Computing mask...")
+            print(f"[{pid}] Computing mask...")
 
             he = Image.open(base_path / "he.png")
             he = np.asarray(he.convert("RGB").crop(box))
@@ -290,7 +291,7 @@ if __name__ == "__main__":
             x, y = patch_he.position
             moved_polygons = translate(polygons, x + crop, y + crop)
 
-            print(f"[{os.getpid()}] Mask done.")
+            print(f"[{pid}] Mask done.")
             return moved_polygons
 
         with Pool(processes=args.num_workers) as pool:

@@ -1,4 +1,3 @@
-import os
 from numbers import Number
 from os import PathLike
 from pathlib import Path
@@ -8,13 +7,23 @@ import cv2
 import docker
 import numpy as np
 from nptyping import NDArray
-from pathaia.util.types import (Coord, NDBoolMask, NDByteGrayImage,
-                                NDByteImage, Patch, Slide)
+from pathaia.util.types import (
+    Coord,
+    NDBoolMask,
+    NDByteGrayImage,
+    NDByteImage,
+    Patch,
+    Slide,
+)
 from skimage.color import rgb2hed
 from skimage.io import imsave
 from skimage.measure import label
-from skimage.morphology import (binary_closing, binary_dilation,
-                                remove_small_holes, remove_small_objects)
+from skimage.morphology import (
+    binary_closing,
+    binary_dilation,
+    remove_small_holes,
+    remove_small_objects,
+)
 from skimage.util import img_as_float, img_as_ubyte
 
 from apriorics.masks import get_dab_mask, get_tissue_mask
@@ -579,7 +588,8 @@ def full_registration(
     Return:
         True if registration was sucesfully performed, False otherwise.
     """
-    print(f"[{os.getpid()}] HE: {patch_he.position} / IHC: {patch_ihc.position}")
+    pid = base_path.name
+    print(f"[{pid}] HE: {patch_he.position} / IHC: {patch_ihc.position}")
 
     if not base_path.exists():
         base_path.mkdir()
@@ -597,13 +607,13 @@ def full_registration(
         has_enough_tissue(he_G, whitetol=247, area_thr=0.2)
         and has_enough_tissue(ihc_G, whitetol=247, area_thr=0.05)
     ):
-        print(f"[{os.getpid()}] Patch doesn't contain enough tissue, skipping.")
+        print(f"[{pid}] Patch doesn't contain enough tissue, skipping.")
         return False
 
     mask = get_dab_mask(ihc, dab_thr=dab_thr, object_min_size=object_min_size)
 
     if mask.sum() < object_min_size:
-        print(f"[{os.getpid()}] Mask would be empty, skipping.")
+        print(f"[{pid}] Mask would be empty, skipping.")
         return False
 
     # he_H, ihc_H = equalize_contrasts(he_H, ihc_H, he_G, ihc_G)
@@ -616,7 +626,7 @@ def full_registration(
     container = convert_to_nifti(base_path, he_path)
     container = convert_to_nifti(base_path, ihc_path, container=container)
 
-    print(f"[{os.getpid()}] Starting registration...")
+    print(f"[{pid}] Starting registration...")
 
     resample = int(100000 / patch_he.size[0])
 
@@ -636,6 +646,6 @@ def full_registration(
     container.stop()
     container.remove()
 
-    print(f"[{os.getpid()}] Registration done...")
+    print(f"[{pid}] Registration done...")
 
     return True

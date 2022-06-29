@@ -238,7 +238,7 @@ if __name__ == "__main__":
                 size_0=patch_he.size_0,
             )
 
-            pid = str(os.get_pid())
+            pid = str(os.getpid())
             base_path = args.tmpfolder / pid
             if not base_path.exists():
                 base_path.mkdir()

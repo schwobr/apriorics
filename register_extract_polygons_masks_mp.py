@@ -263,11 +263,17 @@ if __name__ == "__main__":
                 if restart:
                     break
                 else:
-                    ihc = (
-                        Image.open(base_path / "ihc_warped.png")
-                        .convert("RGB")
-                        .crop(box)
-                    )
+                    try:
+                        ihc = (
+                            Image.open(base_path / "ihc_warped.png")
+                            .convert("RGB")
+                            .crop(box)
+                        )
+                    except FileNotFoundError:
+                        print(pid, os.getpid())
+                        print(list(base_path.iterdir()))
+                        print((base_path / "ihc_warped.png").exists())
+                        raise FileNotFoundError
                     tissue_mask = get_tissue_mask(
                         np.asarray(ihc.convert("L")), whitetol=256
                     )

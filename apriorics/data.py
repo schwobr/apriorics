@@ -7,7 +7,7 @@ import torch
 from albumentations import BasicTransform, Compose
 from pathaia.util.basic import ifnone
 from pathaia.util.types import Patch, Slide
-from torch.utils.data import Dataset, RandomSampler
+from torch.utils.data import Dataset, RandomSampler, Sampler
 from tqdm import tqdm
 
 from apriorics.masks import mask_to_bbox
@@ -254,10 +254,13 @@ class BalancedRandomSampler(RandomSampler):
             return num_samples
         else:
             n_pos = (self.data_source.n_pos > 0).sum()
-            max_avail = min(
-                int(n_pos / self.p_pos),
-                int((len(self.data_source) - n_pos) / (1 - self.p_pos)),
-            )
+            if n_pos == len(self.data_source):
+                return num_samples
+            else:
+                max_avail = min(
+                    int(n_pos / self.p_pos),
+                    int((len(self.data_source) - n_pos) / (1 - self.p_pos)),
+                )
             return min(num_samples, max_avail)
 
     def get_idxs(self) -> List[int]:
@@ -287,6 +290,43 @@ class BalancedRandomSampler(RandomSampler):
             idxs.append(patch)
         assert len(idxs) == len(self)
         return np.random.permutation(idxs)
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(self.get_idxs())
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+
+class ValidationPositiveSampler(Sampler):
+    def __init__(
+        self,
+        data_source: Dataset,
+        num_samples: Optional[int] = None,
+    ):
+        super().__init__(data_source)
+        if num_samples is not None:
+            assert num_samples <= len(data_source)
+        self._num_samples = num_samples
+        self.data_source = data_source
+
+    @property
+    def num_samples(self) -> int:
+        # dataset size might change at runtime
+        if self._num_samples is not None:
+            return self._num_samples
+        else:
+            return (self.data_source.n_pos > 0).sum()
+
+    def get_idxs(self) -> List[int]:
+        n = self.num_samples
+        mask = self.data_source.n_pos > 0
+        pos_idxs = np.argwhere(mask).squeeze(1)
+        idxs = pos_idxs[:n].tolist()
+        if len(idxs) < n:
+            neg_idxs = np.argwhere(~mask).squeeze(1)
+            idxs.extend(neg_idxs[: n - len(idxs)].tolist())
+        return idxs
 
     def __iter__(self) -> Iterator[int]:
         return iter(self.get_idxs())

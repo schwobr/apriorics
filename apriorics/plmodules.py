@@ -110,8 +110,9 @@ class BasicSegmentationModule(pl.LightningModule):
         y_hat = self(x)
         loss = self.loss(y_hat, y)
 
-        if batch_idx == 0 and self.trainer.training_type_plugin.global_rank == 0:
-            self.log_images(x, y, y_hat, batch_idx, step="train")
+        if batch_idx % 500 == 0 and self.trainer.training_type_plugin.global_rank == 0:
+            y_hat = torch.sigmoid(y_hat)
+            self.log_images(x[:8], y[:8], y_hat[:8], batch_idx, step="train")
 
         self.log(f"train_loss_{get_loss_name(self.loss)}", loss)
         if self.sched is not None:
@@ -127,8 +128,8 @@ class BasicSegmentationModule(pl.LightningModule):
         self.log(f"val_loss_{get_loss_name(self.loss)}", loss, sync_dist=True)
 
         y_hat = torch.sigmoid(y_hat)
-        if batch_idx % 100 == 0 and self.trainer.training_type_plugin.global_rank == 0:
-            self.log_images(x, y, y_hat, batch_idx, step="val")
+        if batch_idx % 200 == 0 and self.trainer.training_type_plugin.global_rank == 0:
+            self.log_images(x[:8], y[:8], y_hat[:8], batch_idx, step="val")
 
         self.metrics(y_hat, y.int())
 

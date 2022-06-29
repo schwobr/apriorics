@@ -23,7 +23,11 @@ from timm import create_model
 from torch.utils.data import DataLoader
 from torchmetrics import Accuracy, JaccardIndex, Precision, Recall, Specificity
 
-from apriorics.data import BalancedRandomSampler, SegmentationDataset
+from apriorics.data import (
+    BalancedRandomSampler,
+    SegmentationDataset,
+    ValidationPositiveSampler,
+)
 from apriorics.losses import get_loss
 from apriorics.metrics import DiceScore
 from apriorics.model_components.normalization import group_norm
@@ -254,19 +258,18 @@ if __name__ == "__main__":
         transforms=[CenterCrop(args.patch_size, args.patch_size), ToTensor()],
     )
 
-    sampler = BalancedRandomSampler(train_ds, p_pos=0.95)
     train_dl = DataLoader(
         train_ds,
         batch_size=args.batch_size,
         pin_memory=True,
         num_workers=args.num_workers,
         drop_last=True,
-        sampler=sampler,
+        sampler=BalancedRandomSampler(train_ds, p_pos=0.9),
     )
     val_dl = DataLoader(
         val_ds,
         batch_size=args.batch_size,
-        shuffle=False,
+        sampler=ValidationPositiveSampler(val_ds),
         pin_memory=True,
         num_workers=args.num_workers,
     )

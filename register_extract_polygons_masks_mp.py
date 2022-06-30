@@ -1,7 +1,8 @@
 import os
 from argparse import ArgumentParser
 from ctypes import c_bool
-from multiprocessing import Array, Pool
+from functools import partial
+from multiprocessing import Array, Lock, Pool, current_process
 from pathlib import Path
 from subprocess import run
 
@@ -164,9 +165,90 @@ def get_filefilter(slidefile):
     return _filter
 
 
-if __name__ == "__main__":
-    args = parser.parse_args()
+def pool_init_func(arg_slide_he, arg_slide_ihc, arg_full_mask):
+    global slide_he
+    global slide_ihc
+    global full_mask
+    slide_he = arg_slide_he
+    slide_ihc = arg_slide_ihc
+    full_mask = arg_full_mask
 
+
+def register_extract_mask(box, crop, patch_he):
+    try:
+        coord_tfm = get_coord_transform(slide_he, slide_ihc)
+    except IndexError:
+
+        def coord_tfm(x, y):
+            return Coord(x, y)
+
+    patch_ihc = Patch(
+        id=patch_he.id,
+        slidename="",
+        position=coord_tfm(*patch_he.position),
+        size=patch_he.size,
+        level=patch_he.level,
+        size_0=patch_he.size_0,
+    )
+
+    pid = str(current_process().pid)
+    base_path = args.tmpfolder / pid
+    if not base_path.exists():
+        base_path.mkdir()
+
+    restart = True
+    iterations = 5000
+    count = 0
+    maxiter = 4
+
+    while restart and count < maxiter:
+        restart = not full_registration(
+            slide_he,
+            slide_ihc,
+            patch_he,
+            patch_ihc,
+            base_path,
+            dab_thr=args.dab_thr,
+            object_min_size=args.object_min_size,
+            iterations=iterations,
+            threads=1,
+        )
+        if restart:
+            break
+        else:
+            try:
+                ihc = Image.open(base_path / "ihc_warped.png").convert("RGB").crop(box)
+            except FileNotFoundError:
+                print(pid, os.getpid(), flush=True)
+                print(list(base_path.iterdir()), flush=True)
+                print((base_path / "ihc_warped.png").exists(), flush=True)
+                raise FileNotFoundError
+            tissue_mask = get_tissue_mask(np.asarray(ihc.convert("L")), whitetol=256)
+            if tissue_mask.sum() < 0.999 * tissue_mask.size:
+                restart = True
+                iterations *= 2
+                count += 1
+
+    if restart:
+        return
+
+    print(f"[{pid}] Computing mask...")
+
+    he = Image.open(base_path / "he.png")
+    he = np.asarray(he.convert("RGB").crop(box))
+    mask = get_mask_function(args.ihc_type)(he, np.asarray(ihc))
+    update_full_mask_mp(
+        full_mask, mask, *(patch_he.position + crop), *slide_he.dimensions
+    )
+    polygons = mask_to_polygons_layer(mask)
+    x, y = patch_he.position
+    moved_polygons = translate(polygons, x + crop, y + crop)
+
+    print(f"[{pid}] Mask done.")
+    return moved_polygons
+
+
+def main(args):
     if not args.maskfolder.exists():
         args.maskfolder.mkdir()
 
@@ -175,10 +257,10 @@ if __name__ == "__main__":
 
     if not args.tmpfolder.exists():
         args.tmpfolder.mkdir()
-    historeg_path = args.tmpfolder / "historeg"
 
     crop = int(args.crop * args.psize)
     box = (crop, crop, args.psize - crop, args.psize - crop)
+    interval = -int(args.overlap * args.psize)
 
     ihc_id = IHC_MAPPING[args.ihc_type]
     k = (ihc_id - 1) % 12 + 1
@@ -217,90 +299,15 @@ if __name__ == "__main__":
         slide_ihc = Slide(ihcfile, backend="cucim")
         w, h = slide_he.dimensions
 
-        interval = -int(args.overlap * args.psize)
+        lock = Lock()
+        full_mask = Array(c_bool, h * w, lock=lock)
+        _register_extract_mask = partial(register_extract_mask, box, crop)
 
-        try:
-            coord_tfm = get_coord_transform(slide_he, slide_ihc)
-        except IndexError:
-
-            def coord_tfm(x, y):
-                return Coord(x, y)
-
-        full_mask = Array(c_bool, h * w)
-
-        def register_extract_mask(patch_he):
-            patch_ihc = Patch(
-                id=patch_he.id,
-                slidename="",
-                position=coord_tfm(*patch_he.position),
-                size=patch_he.size,
-                level=patch_he.level,
-                size_0=patch_he.size_0,
-            )
-
-            pid = str(os.getpid())
-            base_path = args.tmpfolder / pid
-            if not base_path.exists():
-                base_path.mkdir()
-
-            restart = True
-            iterations = 5000
-            count = 0
-            maxiter = 4
-
-            while restart and count < maxiter:
-                restart = not full_registration(
-                    slide_he,
-                    slide_ihc,
-                    patch_he,
-                    patch_ihc,
-                    base_path,
-                    dab_thr=args.dab_thr,
-                    object_min_size=args.object_min_size,
-                    iterations=iterations,
-                    threads=1,
-                )
-                if restart:
-                    break
-                else:
-                    try:
-                        ihc = (
-                            Image.open(base_path / "ihc_warped.png")
-                            .convert("RGB")
-                            .crop(box)
-                        )
-                    except FileNotFoundError:
-                        print(pid, os.getpid())
-                        print(list(base_path.iterdir()))
-                        print((base_path / "ihc_warped.png").exists())
-                        raise FileNotFoundError
-                    tissue_mask = get_tissue_mask(
-                        np.asarray(ihc.convert("L")), whitetol=256
-                    )
-                    if tissue_mask.sum() < 0.999 * tissue_mask.size:
-                        restart = True
-                        iterations *= 2
-                        count += 1
-
-            if restart:
-                return
-
-            print(f"[{pid}] Computing mask...")
-
-            he = Image.open(base_path / "he.png")
-            he = np.asarray(he.convert("RGB").crop(box))
-            mask = get_mask_function(args.ihc_type)(he, np.asarray(ihc))
-            update_full_mask_mp(
-                full_mask, mask, *(patch_he.position + crop), *slide_he.dimensions
-            )
-            polygons = mask_to_polygons_layer(mask)
-            x, y = patch_he.position
-            moved_polygons = translate(polygons, x + crop, y + crop)
-
-            print(f"[{pid}] Mask done.")
-            return moved_polygons
-
-        with Pool(processes=args.num_workers) as pool:
+        with Pool(
+            processes=args.num_workers,
+            initializer=pool_init_func,
+            initargs=(slide_he, slide_ihc, full_mask),
+        ) as pool:
             patch_iter = slide_rois_no_image(
                 slide_he,
                 0,
@@ -309,7 +316,7 @@ if __name__ == "__main__":
                 thumb_size=5000,
                 slide_filters=["full"],
             )
-            all_polygons = pool.map(register_extract_mask, patch_iter)
+            all_polygons = pool.map(_register_extract_mask, patch_iter)
             pool.close()
             pool.join()
 
@@ -347,3 +354,8 @@ if __name__ == "__main__":
         f"rm -rf /data/{args.tmpfolder.name}",
         volumes=[f"{args.tmpfolder.parent}:/data"],
     )
+
+
+if __name__ == "__main__":
+    args = parser.parse_args()
+    main(args)

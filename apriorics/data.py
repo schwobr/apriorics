@@ -1,5 +1,4 @@
 import csv
-import pickle
 from os import PathLike
 from typing import Iterator, List, Optional, Sequence, Tuple, Union
 
@@ -8,10 +7,11 @@ import torch
 from albumentations import BasicTransform, Compose
 from pathaia.util.basic import ifnone
 from pathaia.util.types import Patch, Slide
+from scipy.sparse import load_npz
 from torch.utils.data import Dataset, RandomSampler, Sampler
 from tqdm import tqdm
 
-from apriorics.masks import decode_rle, mask_to_bbox
+from apriorics.masks import mask_to_bbox
 from apriorics.transforms import StainAugmentor
 
 
@@ -107,7 +107,7 @@ class SegmentationDataset(Dataset):
         return transformed["image"], transformed["mask"]
 
 
-class RLESegmentationDataset(Dataset):
+class SparseSegmentationDataset(Dataset):
     r"""
     PyTorch dataset for slide segmentation tasks.
 
@@ -141,17 +141,16 @@ class RLESegmentationDataset(Dataset):
     ):
         super().__init__()
         self.slides = []
-        self.rles = []
+        self.masks = []
         self.patches = []
         self.slide_idxs = []
         self.n_pos = []
 
-        for slide_idx, (patches_path, slide_path, rle_path) in enumerate(
+        for slide_idx, (patches_path, slide_path, mask_path) in enumerate(
             zip(patches_paths, slide_paths, rle_paths)
         ):
             self.slides.append(Slide(slide_path, backend=slide_backend))
-            with open(rle_path, "rb") as f:
-                self.rles.append(pickle.load(f))
+            self.masks.append(load_npz(mask_path))
             with open(patches_path, "r") as patch_file:
                 reader = csv.DictReader(patch_file)
                 for patch in reader:
@@ -177,12 +176,14 @@ class RLESegmentationDataset(Dataset):
         patch = self.patches[idx]
         slide_idx = self.slide_idxs[idx]
         slide = self.slides[slide_idx]
-        rle = self.rles[slide_idx]
+        mask = self.masks[slide_idx]
 
         slide_region = np.asarray(
             slide.read_region(patch.position, patch.level, patch.size).convert("RGB")
         )
-        mask_region = decode_rle(rle, *patch.position, *patch.size).astype(np.float32)
+        x, y = patch.position
+        w, h = patch.size
+        mask_region = mask[y : y + h, x : x + w].toarray().astype(np.float32)
 
         if self.stain_augmentor is not None:
             if self.stain_matrices is not None:

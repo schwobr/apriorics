@@ -1,4 +1,3 @@
-import pickle
 from argparse import ArgumentParser
 from multiprocessing import Lock, Manager, Pool
 from pathlib import Path
@@ -7,6 +6,7 @@ import numpy as np
 from pathaia.patches.functional_api import slide_rois_no_image
 from pathaia.util.paths import get_files
 from pathaia.util.types import Slide
+from scipy.sparse import csr_array, save_npz
 from shapely.affinity import translate
 from shapely.ops import unary_union
 from skimage.morphology import (
@@ -16,14 +16,14 @@ from skimage.morphology import (
     remove_small_objects,
 )
 
-from apriorics.masks import remove_large_objects, update_rle
+from apriorics.masks import remove_large_objects
 from apriorics.polygons import mask_to_polygons_layer
 
 parser = ArgumentParser()
-parser.add_argument("--maskfolder", type=Path)
+parser.add_argument("--inmaskfolder", type=Path)
 parser.add_argument("--slidefolder", type=Path)
 parser.add_argument("--wktfolder", type=Path)
-parser.add_argument("--rlefolder", type=Path)
+parser.add_argument("--outmaskfolder", type=Path)
 parser.add_argument("--num-workers", type=int, default=0)
 
 
@@ -40,18 +40,18 @@ def get_mask(img):
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    maskfiles = get_files(args.maskfolder, extensions=".tif").filter(
+    maskfiles = get_files(args.inmaskfolder, extensions=".tif").filter(
         lambda x: int(x.stem.split("-")[-1].split("_")[0]) == 9
     )
     maskfiles.sort(key=lambda x: x.stem)
     slidefiles = maskfiles.map(lambda x: args.slidefolder / f"{x.stem}.svs")
 
-    if not args.rlefolder.exists():
-        args.rlefolder.mkdir()
+    if not args.outmaskfolder.exists():
+        args.outmaskfolder.mkdir()
 
     for maskfile, slidefile in zip(maskfiles, slidefiles):
         slidename = slidefile.stem
-        outfile = args.rlefolder / f"{slidefile.stem}.p"
+        outfile = args.outmaskfolder / f"{slidefile.stem}.npz"
         if outfile.exists():
             continue
         print(slidename)
@@ -62,7 +62,8 @@ if __name__ == "__main__":
         lock = Lock()
 
         with Manager() as manager:
-            rle = manager.list([[]] * h)
+            row_inds = manager.list()
+            col_inds = manager.list()
 
             def correct_mask(patch):
                 mask_reg = np.asarray(
@@ -88,8 +89,10 @@ if __name__ == "__main__":
                     )
                 )
 
+                ii, jj = mask.nonzero()
                 lock.acquire()
-                update_rle(rle, mask, *patch.position, w)
+                row_inds.extend((ii + patch.position.y).tolist())
+                col_inds.extend((jj + patch.position.x).tolist())
                 lock.release()
 
                 polygons = mask_to_polygons_layer(mask, angle_th=0, distance_th=0)
@@ -104,12 +107,18 @@ if __name__ == "__main__":
                 all_polygons = pool.map(correct_mask, patches)
                 pool.close()
                 pool.join()
-            all_polygons = [x for x in all_polygons if x is not None]
-            all_polygons = unary_union(all_polygons)
 
-            with open(args.wktfolder / f"{slidename}.wkt", "w") as f:
-                f.write(all_polygons.wkt)
+            row_inds = row_inds._getvalue()
+            col_inds = col_inds._getvalue()
 
-            print("Writing rle...")
-            with open(outfile, "wb") as f:
-                pickle.dump(rle._getvalue(), f)
+        sparse_mask = csr_array(
+            ([1] * len(row_inds), (row_inds, col_inds)), shape=(h, w), dtype=bool
+        )
+        all_polygons = [x for x in all_polygons if x is not None]
+        all_polygons = unary_union(all_polygons)
+
+        with open(args.wktfolder / f"{slidename}.wkt", "w") as f:
+            f.write(all_polygons.wkt)
+
+        print("Writing mask...")
+        save_npz(outfile, sparse_mask)

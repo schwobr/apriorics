@@ -11,7 +11,7 @@ rasterio==1.2.10
 comet-ml==3.26.0
 cupy-cuda113==10.0.0
 pytorch-lightning==1.5.10
-scipy==1.7.3
+scipy==1.8.1
 spams==2.6.3
 staintools==2.1.2
 docker==5.0.3

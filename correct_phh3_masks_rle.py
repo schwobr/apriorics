@@ -21,9 +21,9 @@ from apriorics.masks import encode_rle, remove_large_objects, update_full_mask_m
 from apriorics.polygons import mask_to_polygons_layer
 
 parser = ArgumentParser()
-parser.add_argument("--inmaskfolder", type=Path)
+parser.add_argument("--maskfolder", type=Path)
 parser.add_argument("--slidefolder", type=Path)
-parser.add_argument("--outwktfolder", type=Path)
+parser.add_argument("--wktfolder", type=Path)
 parser.add_argument("--rlefolder", type=Path)
 parser.add_argument("--num-workers", type=int, default=0)
 
@@ -41,7 +41,7 @@ def get_mask(img):
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    maskfiles = get_files(args.inmaskfolder, extensions=".tif").filter(
+    maskfiles = get_files(args.maskfolder, extensions=".tif").filter(
         lambda x: int(x.stem.split("-")[-1].split("_")[0]) == 9
     )
     maskfiles.sort(key=lambda x: x.stem)
@@ -101,7 +101,7 @@ if __name__ == "__main__":
         all_polygons = [x for x in all_polygons if x is not None]
         all_polygons = unary_union(all_polygons)
 
-        with open(args.outwktfolder / f"{slidename}.wkt", "w") as f:
+        with open(args.wktfolder / f"{slidename}.wkt", "w") as f:
             f.write(all_polygons.wkt)
 
         print("Writing rle...")

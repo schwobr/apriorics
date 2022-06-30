@@ -293,6 +293,8 @@ def main(args):
         ).exists():
             continue
 
+        if hefile.stem.split("-")[0] == "21I000144":
+            continue
         print(hefile, ihcfile)
 
         slide_he = Slide(hefile, backend="cucim")

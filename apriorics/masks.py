@@ -1,4 +1,5 @@
-from multiprocessing import Array
+from functools import partial
+from multiprocessing import Array, Pool
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
@@ -325,3 +326,41 @@ def mask_to_bbox(mask: Union[NDBoolMask, torch.Tensor], pad: int = 5, min_size=1
     if tensor:
         bboxes, masks = torch.as_tensor(bboxes), torch.as_tensor(masks)
     return bboxes, masks
+
+
+def decode_rle(rle, x, y, w, h):
+    mask = np.zeros((h, w), dtype=bool)
+    for i in range(y, y + h):
+        rle_row = rle[i]
+        for k in range(0, len(rle_row), 2):
+            j0 = rle_row[k] - x
+            j1 = j0 + rle_row[k + 1]
+            mask[i - y, max(0, j0) : min(j1, w)] = True
+    return mask
+
+
+def encode_rle_line(mask, w, i):
+    mask = mask.flatten()[i * w : (i + w) * w]
+    prev = False
+    rle_row = []
+    for k, v in enumerate(mask):
+        if v:
+            if prev:
+                rle_row[-1] += 1
+            else:
+                rle_row.extend([k % w, 1])
+                prev = True
+        else:
+            prev = False
+    return i, rle_row
+
+
+def encode_rle(mask, w, h, num_workers=None):
+    rle = [[]] * h
+    with Pool(processes=num_workers) as pool:
+        rle_rows = pool.map(partial(encode_rle_line, mask, w), range(h))
+        pool.close()
+        pool.join()
+    for i, rle_row in rle_rows:
+        rle[i] = rle_row
+    return rle

@@ -1,5 +1,4 @@
-from functools import partial
-from multiprocessing import Array, Pool
+from multiprocessing import Array
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np

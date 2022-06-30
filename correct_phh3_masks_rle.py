@@ -1,7 +1,6 @@
 import pickle
 from argparse import ArgumentParser
-from ctypes import c_bool
-from multiprocessing import Array, Pool
+from multiprocessing import Lock, Manager, Pool
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +16,7 @@ from skimage.morphology import (
     remove_small_objects,
 )
 
-from apriorics.masks import encode_rle, remove_large_objects, update_full_mask_mp
+from apriorics.masks import remove_large_objects, update_rle
 from apriorics.polygons import mask_to_polygons_layer
 
 parser = ArgumentParser()
@@ -47,9 +46,12 @@ if __name__ == "__main__":
     maskfiles.sort(key=lambda x: x.stem)
     slidefiles = maskfiles.map(lambda x: args.slidefolder / f"{x.stem}.svs")
 
+    if not args.rlefolder.exists():
+        args.rlefolder.mkdir()
+
     for maskfile, slidefile in zip(maskfiles, slidefiles):
         slidename = slidefile.stem
-        outfile = args.rlefolder / f"{slidefile.stem}.pickle"
+        outfile = args.rlefolder / f"{slidefile.stem}.p"
         if outfile.exists():
             continue
         print(slidename)
@@ -57,55 +59,57 @@ if __name__ == "__main__":
         slide_mask = Slide(maskfile, backend="cucim")
         slide = Slide(slidefile, backend="cucim")
         w, h = slide.dimensions
+        lock = Lock()
 
-        full_mask = Array(c_bool, h * w)
+        with Manager() as manager:
+            rle = manager.list([[]] * h)
 
-        def correct_mask(patch):
-            mask_reg = np.asarray(
-                slide_mask.read_region(patch.position, patch.level, patch.size).convert(
-                    "1"
+            def correct_mask(patch):
+                mask_reg = np.asarray(
+                    slide_mask.read_region(
+                        patch.position, patch.level, patch.size
+                    ).convert("1")
                 )
-            )
-            if not mask_reg.sum():
-                return
+                if not mask_reg.sum():
+                    return
 
-            slide_reg = np.asarray(
-                slide.read_region(patch.position, patch.level, patch.size).convert(
-                    "RGB"
+                slide_reg = np.asarray(
+                    slide.read_region(patch.position, patch.level, patch.size).convert(
+                        "RGB"
+                    )
                 )
-            )
 
-            mask = remove_large_objects(
-                remove_small_objects(
-                    remove_small_holes(
-                        ~get_mask(slide_reg) & mask_reg, area_threshold=50
-                    ),
-                    min_size=50,
+                mask = remove_large_objects(
+                    remove_small_objects(
+                        remove_small_holes(
+                            ~get_mask(slide_reg) & mask_reg, area_threshold=50
+                        ),
+                        min_size=50,
+                    )
                 )
+
+                lock.acquire()
+                update_rle(rle, mask, *patch.position, w)
+                lock.release()
+
+                polygons = mask_to_polygons_layer(mask, angle_th=0, distance_th=0)
+                polygons = translate(polygons, *patch.position)
+                return polygons
+
+            patches = slide_rois_no_image(
+                slide, 0, 1000, interval=-100, thumb_size=5000, slide_filters=["full"]
             )
+            print("Computing mask...")
+            with Pool(processes=args.num_workers) as pool:
+                all_polygons = pool.map(correct_mask, patches)
+                pool.close()
+                pool.join()
+            all_polygons = [x for x in all_polygons if x is not None]
+            all_polygons = unary_union(all_polygons)
 
-            update_full_mask_mp(full_mask, mask, *patch.position, w, h)
+            with open(args.wktfolder / f"{slidename}.wkt", "w") as f:
+                f.write(all_polygons.wkt)
 
-            polygons = mask_to_polygons_layer(mask, angle_th=0, distance_th=0)
-            polygons = translate(polygons, *patch.position)
-            return polygons
-
-        patches = slide_rois_no_image(
-            slide, 0, 1000, interval=-100, thumb_size=5000, slide_filters=["full"]
-        )
-        print("Computing mask...")
-        with Pool(processes=args.num_workers) as pool:
-            all_polygons = pool.map(correct_mask, patches)
-            pool.close()
-            pool.join()
-        all_polygons = [x for x in all_polygons if x is not None]
-        all_polygons = unary_union(all_polygons)
-
-        with open(args.wktfolder / f"{slidename}.wkt", "w") as f:
-            f.write(all_polygons.wkt)
-
-        print("Writing rle...")
-
-        rle = encode_rle(full_mask, w, h, num_workers=args.num_workers)
-        with open(outfile, "r") as f:
-            pickle.dump(rle, outfile)
+            print("Writing rle...")
+            with open(outfile, "wb") as f:
+                pickle.dump(rle._getvalue(), f)

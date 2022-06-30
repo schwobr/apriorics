@@ -339,11 +339,11 @@ def decode_rle(rle, x, y, w, h):
     return mask
 
 
-def encode_rle_line(mask, w, i):
-    mask = mask.flatten()[i * w : (i + w) * w]
+def _encode_rle_row(w, i):
+    mask_row = mask[i * w : (i + w) * w]
     prev = False
     rle_row = []
-    for k, v in enumerate(mask):
+    for k, v in enumerate(mask_row):
         if v:
             if prev:
                 rle_row[-1] += 1
@@ -357,10 +357,36 @@ def encode_rle_line(mask, w, i):
 
 def encode_rle(mask, w, h, num_workers=None):
     rle = [[]] * h
-    with Pool(processes=num_workers) as pool:
-        rle_rows = pool.map(partial(encode_rle_line, mask, w), range(h))
+
+    def _init_func(mask_arg):
+        global mask
+        mask = mask_arg
+
+    with Pool(processes=num_workers, initializer=_init_func, initargs=(mask,)) as pool:
+        rle_rows = pool.map(partial(_encode_rle_row, w), range(h))
         pool.close()
         pool.join()
     for i, rle_row in rle_rows:
         rle[i] = rle_row
     return rle
+
+
+def update_rle(rle, mask, x, y, slide_w):
+    h, w = mask.shape
+
+    old_mask = decode_rle(rle, x, y, w, h)
+    mask |= old_mask
+
+    for i in range(h):
+        prev = False
+        rle_row = []
+        for k, v in enumerate(mask[i]):
+            if v:
+                if prev:
+                    rle_row[-1] += 1
+                else:
+                    rle_row.extend([(k + x) % slide_w, 1])
+                    prev = True
+            else:
+                prev = False
+        rle[y + i] = rle_row

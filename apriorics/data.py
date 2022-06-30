@@ -150,7 +150,7 @@ class RLESegmentationDataset(Dataset):
             zip(patches_paths, slide_paths, rle_paths)
         ):
             self.slides.append(Slide(slide_path, backend=slide_backend))
-            with open(rle_path, "r") as f:
+            with open(rle_path, "rb") as f:
                 self.rles.append(pickle.load(f))
             with open(patches_path, "r") as patch_file:
                 reader = csv.DictReader(patch_file)

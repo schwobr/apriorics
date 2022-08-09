@@ -11,6 +11,7 @@ Both present significant challenges that currently limit the perspectives of see
 ## Goals of the project
 
 This project aims at covering the main weaknesses of both automated diagnosis and segmentation, by creating a large annotated dataset for the segmentation of multiple biological structures, which can then serve as a basis to perform explainable diagnosis using features extracted from these structures. To that end, we make use of immunohistochemistry (IHC), a technique used in day-to-day diagnosis that highlights specific proteins on tissue slides. This can be used to detect certain mutations to obtain a finer diagnosis, but also to isolate specific biological structures. We selected 9 markers that highlight biological elements that pathologists use to make their diagnosis:
+
 * AE1AE3: epithelial cells' cytoplasms
 * CD163: tumor associated macrophages
 * CD3/CD20: T and B lymphocytes

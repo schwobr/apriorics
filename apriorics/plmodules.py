@@ -67,7 +67,7 @@ def get_scheduler_func(
 
 class BasicSegmentationModule(pl.LightningModule):
     """
-    :class:`PytorchLightning.LightningModule` to use for binary semantic segmentation
+    :class:`pytorch_lightning.LightningModule` to use for binary semantic segmentation
     tasks.
 
     Args:
@@ -176,12 +176,14 @@ class BasicDetectionModule(pl.LightningModule):
 
     Args:
         model: underlying PyTorch model.
-        loss: loss function.
         lr: learning rate.
         wd: weight decay for AdamW optimizer.
         scheduler_func: Function that takes an optimizer as input and returns a
             scheduler dict formatted for PytorchLightning.
-        metrics: list of :class:`torchmetrics.Metric` metrics to compute on validation.
+        seg_metrics: list of :class:`torchmetrics.Metric` segmentation metrics to
+            compute on validation.
+        det_metrics: list of :class:`torchmetrics.Metric` detection metrics to
+            compute on validation.
     """
 
     def __init__(

@@ -132,7 +132,7 @@ class SparseSegmentationDataset(Dataset):
     def __init__(
         self,
         slide_paths: Sequence[PathLike],
-        rle_paths: Sequence[PathLike],
+        mask_paths: Sequence[PathLike],
         patches_paths: Sequence[PathLike],
         stain_matrices_paths: Optional[Sequence[PathLike]] = None,
         stain_augmentor: Optional[StainAugmentor] = None,
@@ -147,7 +147,7 @@ class SparseSegmentationDataset(Dataset):
         self.n_pos = []
 
         for slide_idx, (patches_path, slide_path, mask_path) in enumerate(
-            zip(patches_paths, slide_paths, rle_paths)
+            zip(patches_paths, slide_paths, mask_paths)
         ):
             self.slides.append(Slide(slide_path, backend=slide_backend))
             self.masks.append(load_npz(mask_path))

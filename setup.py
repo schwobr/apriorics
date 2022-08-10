@@ -34,7 +34,7 @@ statuses = [
     "6 - Mature",
     "7 - Inactive",
 ]
-py_versions = "3.5 3.6 3.7 3.8 3.9".split()
+py_versions = "3.8 3.9".split()
 
 requirements = cfg.get("requirements", "").split()
 lic = licenses[cfg["license"]]

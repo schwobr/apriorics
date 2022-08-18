@@ -1,8 +1,4 @@
-# APRIORICS
-
-[![Documentation Status](https://readthedocs.org/projects/apriorics/badge/?version=latest)](https://apriorics.readthedocs.io/en/latest/?badge=latest)
-
-## Install
+# Installation
 
 First, we need to install my fork of [HistoReg](https://github.com/CBICA/HistoReg) that
 contains a ready-to-use Dockerfile.

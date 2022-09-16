@@ -1,8 +1,8 @@
 schema: '2.0'
 stages:
   slide_download:
-    cmd: python scripts/utils/file_transfer.py --out-csv downloaded_slides.csv --data-path
-      '/data/anapath/AprioricsSlides' --ihc-type 'AE1AE3' --mapping-file 'ihc_mapping.json'
+    cmd: python ../utils/file_transfer.py --out-csv downloaded_slides.csv --data-path
+      '/data/anapath/AprioricsSlides' --ihc-type 'AE1AE3' --mapping-file '../../ihc_mapping.json'
       --mask-extension '.tif' --remote-path '/media/AprioricsSlides' --slide-extension
       '.svs' --slide-path 'slides' --clean-previous --import-ihc --extension .svs
       --rel-path slides --remote-rel-path .
@@ -11,8 +11,8 @@ stages:
       md5: 876d76f843beb40c519fed4c80b5ccbe
       size: 116934
   mask_extraction:
-    cmd: python scripts/mask_extraction/register_extract_polygons_masks_mp.py --data-path
-      '/data/anapath/AprioricsSlides' --ihc-type 'AE1AE3' --mapping-file 'ihc_mapping.json'
+    cmd: python register_extract_polygons_masks_mp.py --data-path
+      '/data/anapath/AprioricsSlides' --ihc-type 'AE1AE3' --mapping-file '../../ihc_mapping.json'
       --mask-extension '.tif' --remote-path '/media/AprioricsSlides' --server 'srlbdgpu02'
       --slide-extension '.svs' --slide-path 'slides' --psize 5000 --overlap 0.3 --crop
       0.1 --dab-thr 0.03 --object-min-size 1000 --binary-op 'closing' --radius 10
@@ -31,7 +31,7 @@ stages:
       size: 6024137967
       nfiles: 249
   wkt_to_geojson:
-    cmd: python scripts/utils/wkt2geojsons.py --mask-path 'masks' --slide-path 'slides'
+    cmd: python ../utils/wkt2geojsons.py --mask-path 'masks' --slide-path 'slides'
       --wkt-path 'wkts' --geojson-path 'geojsons' --data-path /data/anapath/AprioricsSlides
       --ihc-type AE1AE3
     deps:
@@ -45,9 +45,9 @@ stages:
       size: 9567573879
       nfiles: 249
   geojson_upload:
-    cmd: python scripts/utils/file_transfer.py --data-path /media/AprioricsSlides
+    cmd: python ../utils/file_transfer.py --data-path /media/AprioricsSlides
       --remote-path /data/anapath/AprioricsSlides --ihc-type AE1AE3 --mapping-file
-      ihc_mapping.json --recurse --extension .geojson --rel-path geojsons --remote-rel-path
+      ../../ihc_mapping.json --recurse --extension .geojson --rel-path geojsons --remote-rel-path
       geojsons
     deps:
     - path: /data/anapath/AprioricsSlides/geojsons/AE1AE3

@@ -37,3 +37,17 @@ stages:
     outs:
       - ${base.data-path}/${local.geojson-path}/${base.ihc-type}:
           persist: true
+
+  geojson_upload:
+    cmd: >-
+      python scripts/utils/file_transfer.py
+      --data-path ${base.remote-path}
+      --remote-path ${base.data-path}
+      --ihc-type ${base.ihc-type}
+      --mapping-file ${base.mapping-file}
+      --recurse
+      --extension .geojson
+      --rel-path ${remote.geojson-path}
+      --remote-rel-path ${local.geojson-path}
+    deps:
+      - ${base.data-path}/${local.geojson-path}/${base.ihc-type}

@@ -248,13 +248,13 @@ def main(args):
     interval = -int(args.overlap * args.psize)
 
     hefiles = get_files(
-        args.slidefolder / args.ihc_type / "HE",
+        slidefolder / args.ihc_type / "HE",
         extensions=args.slide_extension,
         recurse=False,
     )
     hefiles.sort(key=lambda x: x.stem.split("-")[0])
     ihcfiles = get_files(
-        args.slidefolder / args.ihc_type / "IHC",
+        slidefolder / args.ihc_type / "IHC",
         extensions=args.slide_extension,
         recurse=False,
     )

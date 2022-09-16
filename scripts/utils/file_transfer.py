@@ -45,7 +45,14 @@ if __name__ == "__main__":
 
     data = {"id": [], "path": []}
     for file in files:
-        info = get_info_from_filename(file.stem, ihc_mapping)
+        try:
+            info = get_info_from_filename(file.stem, ihc_mapping)
+        except ValueError:
+            info = {
+                "ihc_type": file.parts[-3],
+                "slide_type": file.parts[-2],
+                "block": file.stem,
+            }
         if not (
             info["ihc_type"] == args.ihc_type
             and (info["slide_type"] == "HE" or args.import_ihc)

@@ -1,5 +1,5 @@
 base:
-  data-path: /data/anapath/apriorics
+  data-path: /data/anapath/AprioricsSlides
   ihc-type: AE1AE3
   mapping-file: ihc_mapping.json
   mask-extension: .tif

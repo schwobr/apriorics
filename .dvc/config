@@ -4,7 +4,7 @@
 ['remote "AprioricsSlides"']
     url = /media/AprioricsSlides/.cache
 ['remote "cache"']
-    url = /data/anapath/apriorics/.cache
+    url = /data/anapath/AprioricsSlides/.cache
 [cache]
     local = cache
     type = reflink,hardlink,symlink,copy

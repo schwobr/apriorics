@@ -272,7 +272,7 @@ def main(args):
         hefile = Path(hefile)
         ihcfile = Path(ihcfile)
 
-        maskpath = maskfolder / hefile.with_suffix(".png")
+        maskpath = maskfolder / hefile.relative_to(slidefolder).with_suffix(".png")
         if not maskpath.parent.exists():
             maskpath.parent.mkdir(parents=True)
 
@@ -311,7 +311,7 @@ def main(args):
 
         print("Saving full polygons...")
 
-        wktfile = wktfolder / hefile.with_suffix(".wkt")
+        wktfile = wktfolder / hefile.relative_to(slidefolder).with_suffix(".wkt")
         if not wktfile.parent.exists():
             wktfile.parent.mkdir(parents=True)
         with wktfile.open("w") as f:

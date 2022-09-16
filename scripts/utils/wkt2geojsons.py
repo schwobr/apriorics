@@ -9,32 +9,43 @@ from shapely.geometry import MultiPolygon, Polygon
 
 parser = ArgumentParser("Transforms wkt files into geojson format.")
 parser.add_argument(
-    "--wktfolder", type=Path, help="Input folder containing wkt files.", required=True
+    "--data-path",
+    type=Path,
+    help="Main data folder containing all input and output subfolders.",
+    required=True,
 )
 parser.add_argument(
-    "--geojsonfolder", type=Path, help="Output folder for geojson files.", required=True
+    "--wkt-path", type=Path, help="Input folder containing wkt files.", required=True
 )
 parser.add_argument(
-    "--recurse",
-    action="store_true",
-    help="Specify to recurse through wktfolder when looking for wkt files. Optional.",
+    "--geojson-path", type=Path, help="Output folder for geojson files.", required=True
 )
+parser.add_argument("--ihc-type", required=True)
 
 
 if __name__ == "__main__":
-    args = parser.parse_args()
+    args = parser.parse_known_args()[0]
 
-    wktfiles = get_files(args.wktfolder, extensions=".wkt", recurse=args.recurse)
+    wktfiles = get_files(
+        args.data_path / args.wkt_path / args.ihc_type / "HE",
+        extensions=".wkt",
+        recurse=False,
+    )
 
     for wktfile in wktfiles:
-        outfile = args.geojsonfolder / wktfile.relative_to(args.wktfolder).with_suffix(
-            ".geojson"
+        outfile = (
+            args.data_path
+            / args.geojson_path
+            / wktfile.relative_to(args.data_path / args.wkt_path).with_suffix(
+                ".geojson"
+            )
         )
 
         if outfile.exists():
             continue
 
-        print(wktfile.stem)
+        print(wktfile)
+
         with open(wktfile, "r") as f:
             polygons = wkt.load(f)
         if isinstance(polygons, Polygon):

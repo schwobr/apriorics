@@ -1,8 +1,7 @@
 from argparse import ArgumentParser
 
-from pathaia.util.paths import get_files
-
 from apriorics.cytomine import get_uploaded_images, upload_image_to_cytomine
+from pathaia.util.paths import get_files
 
 IHC_MAPPING = {
     13: "AE1AE3",
@@ -28,7 +27,7 @@ parser.add_argument("--recurse", action="store_true")
 
 
 if __name__ == "__main__":
-    args = parser.parse_args()
+    args = parser.parse_args()[0]
 
     filepaths = get_files(args.infolder, extensions=[".svs"], recurse=args.recurse)
 

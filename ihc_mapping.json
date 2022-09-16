@@ -1,0 +1,24 @@
+{
+    "HE": {
+        "AE1AE3": 1,
+        "CD163": 2,
+        "CD3CD20": 3,
+        "EMD": 4,
+        "ERGCaldesmone": 5,
+        "ERGPodoplanine": 6,
+        "INI1": 7,
+        "P40ColIV": 8,
+        "PHH3": 9
+    },
+    "IHC": {
+        "AE1AE3": 13,
+        "CD163": 14,
+        "CD3CD20": 15,
+        "EMD": 16,
+        "ERGCaldesmone": 17,
+        "ERGPodoplanine": 18,
+        "INI1": 19,
+        "P40ColIV": 20,
+        "PHH3": 21
+    }
+}

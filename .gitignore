@@ -133,3 +133,6 @@ patches/
 pathaia/
 
 .vscode/
+/downloaded_slides.csv
+
+downloaded_slides.csv

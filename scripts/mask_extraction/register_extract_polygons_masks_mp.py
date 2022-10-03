@@ -7,9 +7,6 @@ from subprocess import run
 
 import docker
 import numpy as np
-from apriorics.masks import get_mask_function, get_tissue_mask, update_full_mask_mp
-from apriorics.polygons import mask_to_polygons_layer
-from apriorics.registration import full_registration, get_coord_transform
 from ordered_set import OrderedSet
 from pathaia.patches import slide_rois_no_image
 from pathaia.util.paths import get_files
@@ -17,6 +14,10 @@ from pathaia.util.types import Coord, Patch, Slide
 from PIL import Image
 from shapely.affinity import translate
 from shapely.ops import unary_union
+
+from apriorics.masks import get_mask_function, get_tissue_mask, update_full_mask_mp
+from apriorics.polygons import mask_to_polygons_layer
+from apriorics.registration import full_registration, get_coord_transform
 
 parser = ArgumentParser(
     prog=(

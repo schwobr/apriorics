@@ -14,7 +14,7 @@ stages:
 
   mask_extraction:
     cmd: >-
-      python mask_extraction/register_extract_polygons_masks_mp.py
+      python register_extract_polygons_masks_mp.py
       ${base}
       ${mask_extraction}
       ${local}
@@ -25,6 +25,20 @@ stages:
           persist: true
       - ${base.data-path}/${local.wkt-path}/${base.ihc-type}:
           persist: true
+
+  mask_upload:
+    cmd: >-
+      python ../utils/file_transfer.py
+      --data-path ${base.remote-path}
+      --remote-path ${base.data-path}
+      --ihc-type ${base.ihc-type}
+      --mapping-file ${base.mapping-file}
+      --recurse
+      --extension .tif
+      --rel-path ${remote.mask-path}
+      --remote-rel-path ${local.mask-path}
+    deps:
+      - ${base.data-path}/${local.mask-path}/${base.ihc-type}
 
   wkt_to_geojson:
     cmd: >-

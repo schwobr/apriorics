@@ -163,7 +163,7 @@ class DiceLoss(nn.Module):
             "sum" or "none".
     """
 
-    def __init__(self, smooth=1, reduction="mean"):
+    def __init__(self, smooth: float = 1, reduction: str = "mean"):
         super().__init__()
         self.smooth = smooth
         self.reduction = reduction

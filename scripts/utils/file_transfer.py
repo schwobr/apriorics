@@ -4,8 +4,9 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 import pandas as pd
-from apriorics.data_utils import get_info_from_filename
 from pathaia.util.paths import get_files
+
+from apriorics.data_utils import get_info_from_filename
 
 parser = ArgumentParser()
 parser.add_argument("--remote-path", type=Path, required=True)

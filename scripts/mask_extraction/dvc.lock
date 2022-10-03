@@ -2,21 +2,21 @@ schema: '2.0'
 stages:
   slide_download:
     cmd: python ../utils/file_transfer.py --out-csv downloaded_slides.csv --data-path
-      '/data/anapath/AprioricsSlides' --ihc-type 'AE1AE3' --mapping-file '../../ihc_mapping.json'
+      '/data/anapath/AprioricsSlides' --ihc-type 'PHH3' --mapping-file '../../ihc_mapping.json'
       --mask-extension '.tif' --remote-path '/media/AprioricsSlides' --slide-extension
       '.svs' --slide-path 'slides' --clean-previous --import-ihc --extension .svs
       --rel-path slides --remote-rel-path .
     outs:
     - path: downloaded_slides.csv
-      md5: 876d76f843beb40c519fed4c80b5ccbe
-      size: 116934
+      md5: df0fcafe3a8ec53fb38a7605964f00b2
+      size: 126782
   mask_extraction:
-    cmd: python register_extract_polygons_masks_mp.py --data-path
-      '/data/anapath/AprioricsSlides' --ihc-type 'AE1AE3' --mapping-file '../../ihc_mapping.json'
-      --mask-extension '.tif' --remote-path '/media/AprioricsSlides' --server 'srlbdgpu02'
-      --slide-extension '.svs' --slide-path 'slides' --psize 5000 --overlap 0.3 --crop
-      0.1 --dab-thr 0.03 --object-min-size 1000 --binary-op 'closing' --radius 10
-      --mask-path 'masks' --slide-path 'slides' --wkt-path 'wkts' --geojson-path 'geojsons'
+    cmd: python register_extract_polygons_masks_mp.py --data-path '/data/anapath/AprioricsSlides'
+      --ihc-type 'AE1AE3' --mapping-file '../../ihc_mapping.json' --mask-extension
+      '.tif' --remote-path '/media/AprioricsSlides' --server 'srlbdgpu02' --slide-extension
+      '.svs' --slide-path 'slides' --psize 5000 --overlap 0.3 --crop 0.1 --dab-thr
+      0.03 --object-min-size 1000 --binary-op 'closing' --radius 10 --mask-path 'masks'
+      --slide-path 'slides' --wkt-path 'wkts' --geojson-path 'geojsons'
     deps:
     - path: downloaded_slides.csv
       md5: f7f42d8a624f7b8b3b664c404b82b6ce
@@ -45,10 +45,9 @@ stages:
       size: 9567573879
       nfiles: 249
   geojson_upload:
-    cmd: python ../utils/file_transfer.py --data-path /media/AprioricsSlides
-      --remote-path /data/anapath/AprioricsSlides --ihc-type AE1AE3 --mapping-file
-      ../../ihc_mapping.json --recurse --extension .geojson --rel-path geojsons --remote-rel-path
-      geojsons
+    cmd: python ../utils/file_transfer.py --data-path /media/AprioricsSlides --remote-path
+      /data/anapath/AprioricsSlides --ihc-type AE1AE3 --mapping-file ../../ihc_mapping.json
+      --recurse --extension .geojson --rel-path geojsons --remote-rel-path geojsons
     deps:
     - path: /data/anapath/AprioricsSlides/geojsons/AE1AE3
       md5: 8c9ae846b1efee52058fb27d6fe0eb3c.dir

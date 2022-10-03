@@ -1,4 +1,3 @@
-import os
 from argparse import ArgumentParser
 from ctypes import c_bool
 from functools import partial
@@ -19,19 +18,6 @@ from shapely.ops import unary_union
 from apriorics.masks import get_mask_function, get_tissue_mask, update_full_mask_mp
 from apriorics.polygons import mask_to_polygons_layer
 from apriorics.registration import full_registration, get_coord_transform
-
-IHC_MAPPING = {
-    "AE1AE3": 13,
-    "CD163": 14,
-    "CD3CD20": 15,
-    "EMD": 16,
-    "ERGCaldesmone": 17,
-    "ERGPodoplanine": 18,
-    "INI1": 19,
-    "P40ColIV": 20,
-    "PHH3": 21,
-}
-
 
 parser = ArgumentParser(
     prog=(
@@ -98,41 +84,32 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
-    "--slidefolder",
+    "--data-path",
+    type=Path,
+    help="Main data folder containing all input and output subfolders.",
+    required=True,
+)
+parser.add_argument(
+    "--slide-path",
     type=Path,
     help="Input folder that contains input svs slide files.",
     required=True,
 )
 parser.add_argument(
     "--ihc-type",
-    choices=IHC_MAPPING.keys(),
-    help=(
-        "Name of the IHC to extract masks from. Must be one of "
-        f"{', '.join(IHC_MAPPING.keys())}."
-    ),
+    help=("Name of the IHC to extract masks from."),
     required=True,
 )
 parser.add_argument(
-    "--slidefile",
+    "--tmp-path",
     type=Path,
+    default="tmp",
     help=(
-        "Input txt file that contains the names of the H&E slides to register and "
-        "extract masks from. Optional."
+        "Path to the temporary folder that will be used for computation. Default tmp."
     ),
 )
-parser.add_argument(
-    "--tmpfolder",
-    type=Path,
-    default=Path("/data/tmp/cyto_annotations"),
-    help=(
-        "Path to the temporary folder that will be used for computation. Default "
-        "/data/tmp/cyto_annotations."
-    ),
-)
-parser.add_argument(
-    "--maskfolder", type=Path, help="Output mask folder.", required=True
-)
-parser.add_argument("--wktfolder", type=Path, help="Output wkt folder.", required=True)
+parser.add_argument("--mask-path", type=Path, help="Output mask folder.", required=True)
+parser.add_argument("--wkt-path", type=Path, help="Output wkt folder.", required=True)
 parser.add_argument(
     "--novips",
     action="store_true",
@@ -145,6 +122,9 @@ parser.add_argument(
     "--num-workers",
     type=int,
     help="Number of workers to use for processing. Defaults to all available workers.",
+)
+parser.add_argument(
+    "--slide-extension", default=".svs", help="Extension of slide files. Default .svs."
 )
 
 
@@ -174,7 +154,12 @@ def pool_init_func(arg_slide_he, arg_slide_ihc, arg_full_mask):
     full_mask = arg_full_mask
 
 
-def register_extract_mask(box, crop, patch_he):
+def register_extract_mask(args, patch_he):
+    crop = int(args.crop * args.psize)
+    box = (crop, crop, args.psize - crop, args.psize - crop)
+
+    tmpfolder = args.data_path / args.tmp_path
+
     try:
         coord_tfm = get_coord_transform(slide_he, slide_ihc)
     except IndexError:
@@ -192,7 +177,7 @@ def register_extract_mask(box, crop, patch_he):
     )
 
     pid = str(current_process().pid)
-    base_path = args.tmpfolder / pid
+    base_path = tmpfolder / pid
     if not base_path.exists():
         base_path.mkdir()
 
@@ -219,10 +204,8 @@ def register_extract_mask(box, crop, patch_he):
             try:
                 ihc = Image.open(base_path / "ihc_warped.png").convert("RGB").crop(box)
             except FileNotFoundError:
-                print(pid, os.getpid(), flush=True)
-                print(list(base_path.iterdir()), flush=True)
-                print((base_path / "ihc_warped.png").exists(), flush=True)
-                raise FileNotFoundError
+                print(f"[{pid}] ERROR: HE={patch_he}/IHC={patch_ihc}. Restarting...")
+                return
             tissue_mask = get_tissue_mask(np.asarray(ihc.convert("L")), whitetol=256)
             if tissue_mask.sum() < 0.999 * tissue_mask.size:
                 restart = True
@@ -249,28 +232,32 @@ def register_extract_mask(box, crop, patch_he):
 
 
 def main(args):
-    if not args.maskfolder.exists():
-        args.maskfolder.mkdir()
+    slidefolder = args.data_path / args.slide_path
+    maskfolder = args.data_path / args.mask_path
+    wktfolder = args.data_path / args.wkt_path
+    tmpfolder = args.data_path / args.tmp_path
 
-    if not args.wktfolder.exists():
-        args.wktfolder.mkdir()
+    if not maskfolder.exists():
+        maskfolder.mkdir()
 
-    if not args.tmpfolder.exists():
-        args.tmpfolder.mkdir()
+    if not wktfolder.exists():
+        wktfolder.mkdir()
 
-    crop = int(args.crop * args.psize)
-    box = (crop, crop, args.psize - crop, args.psize - crop)
+    if not tmpfolder.exists():
+        tmpfolder.mkdir()
+
     interval = -int(args.overlap * args.psize)
 
-    ihc_id = IHC_MAPPING[args.ihc_type]
-    k = (ihc_id - 1) % 12 + 1
-
-    hefiles = get_files(args.slidefolder, extensions=[".svs"], recurse=False).filter(
-        lambda x: int(x.stem.split("-")[-1].split("_")[0]) == k
+    hefiles = get_files(
+        slidefolder / args.ihc_type / "HE",
+        extensions=args.slide_extension,
+        recurse=False,
     )
     hefiles.sort(key=lambda x: x.stem.split("-")[0])
-    ihcfiles = get_files(args.slidefolder, extensions=[".svs"], recurse=False).filter(
-        lambda x: int(x.stem.split("-")[-1].split("_")[0]) == k + 12
+    ihcfiles = get_files(
+        slidefolder / args.ihc_type / "IHC",
+        extensions=args.slide_extension,
+        recurse=False,
     )
     ihcfiles.sort(key=lambda x: x.stem.split("-")[0])
 
@@ -282,28 +269,26 @@ def main(args):
     hefiles = hefiles[heidxs]
     ihcfiles = ihcfiles[ihcidxs]
 
-    filefilter = get_filefilter(args.slidefile)
-    idxs = filefilter(hefiles)
-    hefiles = hefiles[idxs]
-    ihcfiles = ihcfiles[idxs]
-
     for hefile, ihcfile in zip(hefiles, ihcfiles):
-        if (args.maskfolder / f"{hefile.stem}.tif").exists() or (
-            args.maskfolder / f"{hefile.stem}.png"
-        ).exists():
+        hefile = Path(hefile)
+        ihcfile = Path(ihcfile)
+
+        maskpath = maskfolder / hefile.relative_to(slidefolder).with_suffix(".png")
+        if not maskpath.parent.exists():
+            maskpath.parent.mkdir(parents=True)
+
+        if maskpath.with_suffix(".tif").exists() or (maskpath).exists():
             continue
 
-        if hefile.stem.split("-")[0] == "21I000144":
-            continue
         print(hefile, ihcfile)
 
-        slide_he = Slide(hefile, backend="cucim")
-        slide_ihc = Slide(ihcfile, backend="cucim")
+        slide_he = Slide(slidefolder / hefile, backend="cucim")
+        slide_ihc = Slide(slidefolder / ihcfile, backend="cucim")
         w, h = slide_he.dimensions
 
         lock = Lock()
         full_mask = Array(c_bool, h * w, lock=lock)
-        _register_extract_mask = partial(register_extract_mask, box, crop)
+        _register_extract_mask = partial(register_extract_mask, args)
 
         with Pool(
             processes=args.num_workers,
@@ -327,14 +312,16 @@ def main(args):
 
         print("Saving full polygons...")
 
-        with (args.wktfolder / f"{hefile.stem}.wkt").open("w") as f:
+        wktfile = wktfolder / hefile.relative_to(slidefolder).with_suffix(".wkt")
+        if not wktfile.parent.exists():
+            wktfile.parent.mkdir(parents=True)
+        with wktfile.open("w") as f:
             f.write(all_polygons.wkt)
 
         print("Polygons saved.")
 
         print("Saving mask...")
 
-        maskpath = args.maskfolder / f"{hefile.stem}.png"
         full_mask_np = np.frombuffer(full_mask.get_obj(), dtype=bool).reshape(h, w)
         Image.fromarray(full_mask_np).convert("RGB").save(maskpath)
         if not args.novips:
@@ -353,11 +340,11 @@ def main(args):
     client = docker.from_env()
     client.containers.run(
         "historeg",
-        f"rm -rf /data/{args.tmpfolder.name}",
-        volumes=[f"{args.tmpfolder.parent}:/data"],
+        f"rm -rf /data/{tmpfolder.name}",
+        volumes=[f"{tmpfolder.parent}:/data"],
     )
 
 
 if __name__ == "__main__":
-    args = parser.parse_args()
+    args = parser.parse_known_args()[0]
     main(args)

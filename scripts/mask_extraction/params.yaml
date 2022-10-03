@@ -1,0 +1,29 @@
+base:
+  data-path: /data/anapath/AprioricsSlides
+  ihc-type: PHH3
+  mapping-file: ../../ihc_mapping.json
+  mask-extension: .tif
+  remote-path: /media/AprioricsSlides
+  slide-extension: .svs
+  slide-path: slides
+
+local:
+  mask-path: masks
+  slide-path: slides
+  wkt-path: wkts
+  geojson-path: geojsons
+
+remote:
+  mask-path: masks
+  slide-path: .
+  wkt-path: wkts
+  geojson-path: geojsons
+
+slide_download:
+  clean-previous: true
+  import-ihc: true
+
+mask_extraction:
+  dab-thr: 0.04
+  object-min-size: 50
+  binary-op: none

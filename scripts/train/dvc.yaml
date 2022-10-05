@@ -1,0 +1,79 @@
+stages:
+  slide_download:
+    cmd: >-
+      python ../utils/file_transfer.py
+      --out-csv .downloaded_slides.csv
+      ${base}
+      ${slide_download}
+      --extension ${base.slide-extension}
+      --rel-path ${local.slide-path}
+      --remote-rel-path ${remote.slide-path}
+    outs:
+      - .downloaded_slides.csv
+    always_changed: true
+
+  split_dataset:
+    cmd: >-
+      python split_dataset.py
+    deps:
+      - .downloaded_slides.csv
+      - ${base.data-path}/${local.mask-path}/${base.ihc-type}
+    outs:
+      - ${base.data-path}/${local.train-path}/${base.ihc-type}/splits.csv:
+          persist: true
+
+  generate_patch_csvs:
+    cmd: >-
+      python generate_patch_dataset.py
+    deps:
+      - .downloaded_slides.csv
+      - ${base.data-path}/${local.mask-path}/${base.ihc-type}
+    outs:
+      - ${base.data-path}/${local.train-path}/${base.ihc-type}/{train.patch-size}_{train.level}/patch_csvs:
+          persist: true
+
+  train:
+    cmd: >-
+      python train_segmentation.py
+      --hash-file .model_hash.yaml
+      ${base}
+      ${train}
+      --slidefolder ${base.data-path}/${local.slide-path}
+      --maskfolder ${base.data-path}/${local.mask-path}
+      --trainfolder ${base.data-path}/${local.train-path}
+    deps:
+      - ${base.data-path}/${local.train-path}/${base.ihc-type}/{train.base-size}_{train.level}/patch_csvs
+      - ${base.data-path}/${local.train-path}/${base.ihc-type}/splits.csv
+    outs:
+      - .model_hash.yaml
+
+  evaluate:
+    vars:
+      - .model_hash.yaml:hash
+    cmd: >-
+      python predict_export_geojsons.py
+    deps:
+      - .model_hash.yaml
+    outs:
+      - ${base.data-path}/${local.evaluate-path}/${hash}/geojsons:
+          persist: true
+    metrics:
+      - ${base.data-path}/${local.evaluate-path}/${hash}/metrics.json:
+          persist: true
+
+  geojson_upload:
+    vars:
+      - .model_hash.yaml:hash
+    cmd: >-
+      python ../utils/file_transfer.py
+      --data-path ${base.remote-path}
+      --remote-path ${base.data-path}
+      --ihc-type ${base.ihc-type}
+      --mapping-file ${base.mapping-file}
+      --recurse
+      --extension .geojson
+      --rel-path ${remote.geojson-path}
+      --remote-rel-path ${local.geojson-path}
+    deps:
+      - ${base.data-path}/${local.evaluate-path}/${hash}/geojsons
+    

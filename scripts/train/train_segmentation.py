@@ -7,6 +7,7 @@ import horovod.torch as hvd
 import pandas as pd
 import pytorch_lightning as pl
 import torch
+import yaml
 from albumentations import (
     CenterCrop,
     Flip,
@@ -55,6 +56,11 @@ parser = ArgumentParser(
     )
 )
 parser.add_argument(
+    "--hash-file",
+    type=Path,
+    help="File to store comet experiment version hash in. Optional",
+)
+parser.add_argument(
     "--model",
     help=(
         "Model to use for training. If unet, can be formatted as unet/encoder to "
@@ -69,9 +75,9 @@ parser.add_argument(
     required=True,
 )
 parser.add_argument(
-    "--patch-csv-folder",
+    "--trainfolder",
     type=Path,
-    help="Input folder containing PathAIA csv files.",
+    help="Folder containing all train files.",
     required=True,
 )
 parser.add_argument(
@@ -87,24 +93,10 @@ parser.add_argument(
     required=True,
 )
 parser.add_argument(
-    "--stain-matrices-folder",
-    type=Path,
-    help=(
-        "Input folder containing npy stain matrices files for stain augmentation. "
-        "Optional."
-    ),
-)
-parser.add_argument(
-    "--split-csv",
-    type=Path,
-    help="Input csv file for dataset split containing 2 columns: slide and split.",
-    required=True,
-)
-parser.add_argument(
-    "--logfolder",
-    type=Path,
-    help="Output folder for pytorch lightning log files.",
-    required=True,
+    "--splitfile",
+    type=str,
+    default="splits.csv",
+    help="Name of the csv file containing train/valid/test splits. Default splits.csv.",
 )
 parser.add_argument(
     "--gpu",
@@ -149,6 +141,9 @@ parser.add_argument(
     type=int,
     default=1024,
     help="Size of the original extracted patches. Default 1024.",
+)
+parser.add_argument(
+    "--level", type=int, default=0, help="WSI level for patch extraction. Default 0."
 )
 parser.add_argument(
     "--num-workers",
@@ -204,33 +199,52 @@ parser.add_argument(
     action="store_true",
     help="Specify to use stain augmentation. Optional.",
 )
+parser.add_argument(
+    "--slide-extension",
+    default=".svs",
+    help="File extension of slide files. Default .svs.",
+)
+parser.add_argument(
+    "--mask-extension",
+    default=".tif",
+    help="File extension of slide files. Default .svs.",
+)
 
 if __name__ == "__main__":
     __spec__ = None
-    args = parser.parse_args()
+    args = parser.parse_known_args()[0]
     if args.horovod:
         hvd.init()
 
     seed_everything(workers=True)
 
+    trainfolder = args.trainfolder / args.ihc_type
+    patch_csv_folder = trainfolder / f"{args.base_size}_{args.level}/patch_csvs"
+    maskfolder = args.maskfolder / args.ihc_type / "HE"
+    slidefolder = args.slidefolder / args.ihc_type / "HE"
+    stain_matrices_folder = trainfolder / "stain_matrices"
+    logfolder = args.trainfolder / "logs"
+
     patches_paths = get_files(
-        args.patch_csv_folder, extensions=".csv", recurse=False
+        patch_csv_folder, extensions=".csv", recurse=False
     ).sorted(key=lambda x: x.stem)
     mask_paths = patches_paths.map(
-        lambda x: args.maskfolder / x.with_suffix(".tif").name
+        lambda x: maskfolder / x.with_suffix(args.mask_extension).name
     )
     slide_paths = mask_paths.map(
-        lambda x: args.slidefolder / x.with_suffix(".svs").name
+        lambda x: args.slidefolder / x.with_suffix(args.slide_extension).name
     )
 
-    split_df = pd.read_csv(args.split_csv).sort_values("slide")
+    split_df = pd.read_csv(
+        args.trainfolder / args.ihc_type / args.splitfile
+    ).sort_values("slide")
     split_df = split_df.loc[split_df["slide"].isin(patches_paths.map(lambda x: x.stem))]
     train_idxs = (split_df["split"] == "train").values
     val_idxs = ~train_idxs
 
-    if args.stain_matrices_folder is not None:
+    if stain_matrices_folder is not None:
         stain_matrices_paths = mask_paths.map(
-            lambda x: args.stain_matrices_folder / x.with_suffix(".npy").name
+            lambda x: stain_matrices_folder / x.with_suffix(".npy").name
         )
         stain_matrices_paths = stain_matrices_paths[train_idxs]
     else:
@@ -317,7 +331,7 @@ if __name__ == "__main__":
     logger = CometLogger(
         api_key=os.environ["COMET_API_KEY"],
         workspace="apriorics",
-        save_dir=args.logfolder,
+        save_dir=logfolder,
         project_name="apriorics",
         auto_metric_logging=False,
     )
@@ -345,16 +359,20 @@ if __name__ == "__main__":
     )
 
     if args.resume_version is not None:
-        ckpt_path = (
-            args.logfolder / f"apriorics/{args.resume_version}/checkpoints/last.ckpt"
-        )
+        ckpt_path = logfolder / f"apriorics/{args.resume_version}/checkpoints/last.ckpt"
         checkpoint = torch.load(ckpt_path)
         missing, unexpected = plmodule.load_state_dict(
             checkpoint["state_dict"], strict=False
         )
-    trainer.fit(
-        plmodule,
-        train_dataloaders=train_dl,
-        val_dataloaders=val_dl,
-        # ckpt_path=ckpt_path,
-    )
+
+    try:
+        trainer.fit(
+            plmodule,
+            train_dataloaders=train_dl,
+            val_dataloaders=val_dl,
+            # ckpt_path=ckpt_path,
+        )
+    finally:
+        if args.hash_file is not None and trainer.current_epoch:
+            with open(args.hash_file, "w") as f:
+                yaml.dump({"hash": logger.version}, f)

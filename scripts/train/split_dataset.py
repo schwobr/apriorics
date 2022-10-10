@@ -1,18 +1,18 @@
 import os
-import re
 from argparse import ArgumentParser
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from numpy.random import default_rng
 from pathaia.util.paths import get_files
+
+from apriorics.dataset_preparation import split_data_k_fold
 
 parser = ArgumentParser(prog="Splits a dataset between train and validation slides. ")
 parser.add_argument(
-    "--patch-csv-folder",
+    "--maskfolder",
     type=Path,
-    help="Input folder containing patch csv files.",
+    help="Input folder containing mask files.",
     required=True,
 )
 parser.add_argument(
@@ -22,12 +22,9 @@ parser.add_argument(
     required=True,
 )
 parser.add_argument(
-    "--existing-csv",
-    type=Path,
-    help=(
-        "Existing incomplete split csv. If specified, only missing data will be "
-        "split. Optional"
-    ),
+    "--update",
+    action="store_true",
+    help=("Specify to update existing csv instead of completely recreating it."),
 )
 parser.add_argument(
     "--recurse",
@@ -35,17 +32,18 @@ parser.add_argument(
     help="Specify to recurse through slidefolder when looking for svs files. Optional.",
 )
 parser.add_argument(
-    "--train-ratio",
+    "--test-ratio",
     type=float,
-    default=0.8,
-    help="Part of the dataset to use for training. Default 0.8.",
+    default=0.1,
+    help="Part of the dataset to use for test. Default 0.1.",
 )
 parser.add_argument(
-    "--file-filter",
-    help=(
-        "Regex filter input svs files by names. To filter a specific ihc id x, should"
-        r' be "^21I\d{6}-\d-\d\d-x_\d{6}". Optional.'
-    ),
+    "--nfolds", type=int, default=5, help="Number of folds to create. Default 5."
+)
+parser.add_argument(
+    "--ihc-type",
+    help="Name of the IHC.",
+    required=True,
 )
 parser.add_argument(
     "--seed",
@@ -55,37 +53,45 @@ parser.add_argument(
         "variable. Optional."
     ),
 )
+parser.add_argument("--mask-extension", default=".tif")
 
 if __name__ == "__main__":
-    args = parser.parse_args()
-    patchfiles = get_files(
-        args.patch_csv_folder, extensions=".csv", recurse=args.recurse
-    )
+    args = parser.parse_known_args()[0]
+    slidenames = get_files(
+        args.maskfolder / args.ihc_type / "HE",
+        extensions=args.mask_extension,
+        recurse=args.recurse,
+    ).map(lambda x: x.stem)
 
-    if args.file_filter is not None:
-        filter_regex = re.compile(args.file_filter)
-        patchfiles = patchfiles.filter(lambda x: filter_regex.match(x.name) is not None)
-
-    n = len(patchfiles)
-    n_train = int(args.train_ratio * n)
-
-    if args.existing_csv is not None:
-        ex_df = pd.read_csv(args.existing_csv)
-        n_train -= (ex_df["split"] == "train").sum()
-        patchfiles = patchfiles.filter(lambda x: x.stem not in ex_df["slide"].values)
-        n = len(patchfiles)
+    if args.update and args.out_csv.exists():
+        ex_df = pd.read_csv(args.out_csv)
+        previous_splits = {}
+        for i in ex_df["split"].unique():
+            previous_splits[i] = ex_df.loc[ex_df["split"] == i, "slide"].values
+    else:
+        previous_splits = None
 
     if args.seed is None:
         args.seed = os.environ.get("PL_GLOBAL_SEED")
         if args.seed is not None:
             args.seed = int(args.seed)
 
-    rng = default_rng(args.seed)
-    train_idxs = rng.choice(np.arange(n), size=n_train, replace=False)
-    splits = np.full(n, "valid")
-    splits[train_idxs] = "train"
+    splits = split_data_k_fold(
+        slidenames,
+        k=args.nfolds,
+        test_size=args.test_ratio,
+        seed=args.seed,
+        previous_splits=previous_splits,
+    )
 
-    df = pd.DataFrame({"slide": patchfiles.map(lambda x: x.stem), "split": splits})
-    if args.existing_csv is not None:
-        df = pd.concat((ex_df, df), ignore_index=True)
+    slides = []
+    splits = []
+
+    for k, v in splits.items():
+        splits.extend([k] * len(v))
+        slides.append(v)
+    slides = np.concatenate(slides)
+
+    df = pd.DataFrame({"slide": slides, "split": splits}).sort_values(by="slide")
+
     df.to_csv(args.out_csv, index=False)

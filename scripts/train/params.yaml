@@ -5,6 +5,7 @@ base:
   mask-extension: .tif
   remote-path: /media/AprioricsSlides
   slide-extension: .svs
+  seed: 42
 
 local:
   mask-path: masks
@@ -25,6 +26,12 @@ remote:
 slide_download:
   clean-previous: true
   import-ihc: true
+
+split:
+  nfolds: 5
+  test-ratio: 0.1
+  update: true
+  filename: splits.csv
 
 train:
   base-size: 256

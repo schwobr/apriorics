@@ -10,6 +10,7 @@ def split_data_k_fold(
     k: int = 5,
     test_size: Union[int, float] = 0.1,
     seed: Optional[int] = None,
+    previous_splits: Optional[Dict[str, NDArray[Any]]] = None,
 ) -> Dict[str, NDArray[Any]]:
     r"""
     Split input data sequence into k folds and a test fold.
@@ -26,17 +27,49 @@ def split_data_k_fold(
         sequence.
     """
     rng = np.random.default_rng(seed)
-    n = len(data)
     data = np.array(data)
+    n = len(data)
+
     if isinstance(test_size, float):
         test_size = ceil(test_size * n)
-    test_idxs = rng.randint(n, size=test_size)
+
+    p = np.ones(k) / k
+
+    if previous_splits is not None:
+        n_per_fold = int((n - test_size) / k)
+        n_to_add = max(
+            0, n - test_size - sum([len(v) for v in previous_splits.values()])
+        )
+        test_size -= len(previous_splits["test"])
+        test_size = max(0, test_size)
+
+        for v in previous_splits.values():
+            data = np.delete(data, np.argwhere(np.in1d(data, v)).squeeze(1))
+
+        if n_to_add:
+            for i in range(k):
+                try:
+                    n_fold = max(0, n_per_fold - len(previous_splits[str(i)]))
+                except KeyError:
+                    n_fold = n_per_fold
+
+                p[k] = n_fold / n_to_add
+
+    n = len(data)
+    test_idxs = rng.choice(np.arange(n), size=test_size, replace=False)
     test_data = data[test_idxs]
 
     data = np.delete(data, test_idxs)
-    folds = rng.randint(k, size=len(data))
+    folds = rng.choice(np.arange(k), size=len(data), p=p)
 
-    splits = {str(i): data[folds == i] for i in range(k)}
+    splits = {}
+    for i in range(splits):
+        splits[str(i)] = data[folds == i]
+        if previous_splits is not None:
+            splits[str(i)] = np.concatenate((previous_splits[str(i)], splits[str(i)]))
+
     splits["test"] = test_data
+    if previous_splits is not None:
+        splits["test"] = np.concatenate((previous_splits["test"], splits["test"]))
 
     return splits

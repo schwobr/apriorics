@@ -76,7 +76,7 @@ if __name__ == "__main__":
         if args.seed is not None:
             args.seed = int(args.seed)
 
-    splits = split_data_k_fold(
+    splits_dict = split_data_k_fold(
         slidenames,
         k=args.nfolds,
         test_size=args.test_ratio,
@@ -87,7 +87,7 @@ if __name__ == "__main__":
     slides = []
     splits = []
 
-    for k, v in splits.items():
+    for k, v in splits_dict.items():
         splits.extend([k] * len(v))
         slides.append(v)
     slides = np.concatenate(slides)

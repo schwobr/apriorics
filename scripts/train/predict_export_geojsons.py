@@ -53,9 +53,9 @@ parser.add_argument(
     "--outfolder", type=Path, help="Output folder for geojsons.", required=True
 )
 parser.add_argument(
-    "--patch-csv-folder",
+    "--trainfolder",
     type=Path,
-    help="Input folder containing PathAIA csv files.",
+    help="Folder containing all train files.",
     required=True,
 )
 parser.add_argument(
@@ -65,16 +65,10 @@ parser.add_argument(
     required=True,
 )
 parser.add_argument(
-    "--split-csv",
-    type=Path,
-    help="Input csv file for dataset split containing 2 columns: slide and split.",
-    required=True,
-)
-parser.add_argument(
-    "--logfolder",
-    type=Path,
-    help="Output folder for pytorch lightning log files.",
-    required=True,
+    "--splitfile",
+    type=str,
+    default="splits.csv",
+    help="Name of the csv file containing train/valid/test splits. Default splits.csv.",
 )
 parser.add_argument(
     "--gpu",
@@ -134,23 +128,41 @@ parser.add_argument(
     default=50,
     help="Minimum area of objects to keep. Default 50.",
 )
+parser.add_argument(
+    "--slide-extension",
+    default=".svs",
+    help="File extension of slide files. Default .svs.",
+)
+parser.add_argument(
+    "--fold", default="test", help="Fold to use for test. Default test."
+)
+
 
 if __name__ == "__main__":
-    args = parser.parse_args()
+    args = parser.parse_known_args()[0]
 
     seed_everything(workers=True)
 
+    trainfolder = args.trainfolder / args.ihc_type
+    patch_csv_folder = trainfolder / f"{args.base_size}_{args.level}/patch_csvs"
+    slidefolder = args.slidefolder / args.ihc_type / "HE"
+    logfolder = args.trainfolder / "logs"
+
     patches_paths = get_files(
-        args.patch_csv_folder, extensions=".csv", recurse=False
+        patch_csv_folder, extensions=".csv", recurse=False
     ).sorted(key=lambda x: x.stem)
     slide_paths = patches_paths.map(
-        lambda x: args.slidefolder / x.with_suffix(".svs").name
+        lambda x: args.slidefolder
+        / args.ihc_type
+        / "HE"
+        / x.with_suffix(args.slide_extension).name
     )
 
-    split_df = pd.read_csv(args.split_csv).sort_values("slide")
+    split_df = pd.read_csv(
+        args.trainfolder / args.ihc_type / args.splitfile
+    ).sort_values("slide")
     split_df = split_df.loc[split_df["slide"].isin(patches_paths.map(lambda x: x.stem))]
-    train_idxs = (split_df["split"] == "train").values
-    val_idxs = ~train_idxs
+    val_idxs = (split_df["split"] == args.fold).values
 
     model = args.model.split("/")
     if model[0] == "unet":
@@ -176,7 +188,7 @@ if __name__ == "__main__":
         wd=0,
     ).to(device)
 
-    ckpt_path = args.logfolder / f"apriorics/{args.version}/checkpoints/last.ckpt"
+    ckpt_path = logfolder / f"apriorics/{args.version}/checkpoints/last.ckpt"
     checkpoint = torch.load(ckpt_path)
     missing, unexpected = model.load_state_dict(checkpoint["state_dict"], strict=False)
 
@@ -240,5 +252,9 @@ if __name__ == "__main__":
         polygons = unary_union(polygons)
         if isinstance(polygons, Polygon):
             polygons = MultiPolygon(polygons=[polygons])
-        with open(args.outfolder / f"{slide_path.stem}_pred.geojson", "w") as f:
+
+        outfolder = args.outfolder / args.ihc_type / args.version / "geojsons"
+        if not outfolder.exists():
+            outfolder.mkdir(parents=True)
+        with open(outfolder / f"{slide_path.stem}.geojson", "w") as f:
             json.dump(geopandas.GeoSeries(polygons.geoms).__geo_interface__, f)

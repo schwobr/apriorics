@@ -209,6 +209,9 @@ parser.add_argument(
     default=".tif",
     help="File extension of slide files. Default .svs.",
 )
+parser.add_argument(
+    "--fold", type=int, default=0, help="Fold to use for validation. Default 0."
+)
 
 if __name__ == "__main__":
     __spec__ = None
@@ -239,8 +242,8 @@ if __name__ == "__main__":
         args.trainfolder / args.ihc_type / args.splitfile
     ).sort_values("slide")
     split_df = split_df.loc[split_df["slide"].isin(patches_paths.map(lambda x: x.stem))]
-    train_idxs = (split_df["split"] == "train").values
-    val_idxs = ~train_idxs
+    val_idxs = (split_df["split"] == args.fold).values
+    train_idxs = ~val_idxs
 
     if stain_matrices_folder is not None:
         stain_matrices_paths = mask_paths.map(

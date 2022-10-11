@@ -29,11 +29,17 @@ stages:
   generate_patch_csvs:
     cmd: >-
       python generate_patch_dataset.py
+      ${base}
+      ${patches}
+      --slidefolder ${base.data-path}/${local.slide-path}
+      --maskfolder ${base.data-path}/${local.mask-path}
+      --outfolder ${base.data-path}/${local.train-path}
+      
     deps:
       - .downloaded_slides.csv
       - ${base.data-path}/${local.mask-path}/${base.ihc-type}
     outs:
-      - ${base.data-path}/${local.train-path}/${base.ihc-type}/{train.patch-size}_{train.level}/patch_csvs:
+      - ${base.data-path}/${local.train-path}/${base.ihc-type}/{patches.patch-size}_{patches.level}/patch_csvs:
           persist: true
 
   train:
@@ -42,27 +48,36 @@ stages:
       --hash-file .model_hash.yaml
       ${base}
       ${train}
+      --splitfile ${split.filename}
+      --base-size ${patches.patch-size}
       --slidefolder ${base.data-path}/${local.slide-path}
       --maskfolder ${base.data-path}/${local.mask-path}
       --trainfolder ${base.data-path}/${local.train-path}
     deps:
-      - ${base.data-path}/${local.train-path}/${base.ihc-type}/{train.base-size}_{train.level}/patch_csvs
+      - ${base.data-path}/${local.train-path}/${base.ihc-type}/{patches.patch-size}_{patches.level}/patch_csvs
       - ${base.data-path}/${local.train-path}/${base.ihc-type}/${split.filename}
     outs:
       - .model_hash.yaml
+      - ${base.data-path}/${local.train-path}/logs:
+          persist: true
 
   evaluate:
     vars:
       - .model_hash.yaml:hash
     cmd: >-
       python predict_export_geojsons.py
+      --outfolder ${base.data-path}/${local.evaluate-path}
+      --version ${hash}
+      --splitfile ${split.filename}
+      --base-size ${patches.patch-size}
+      ${base}
+      ${train}
+      ${evaluate}
     deps:
       - .model_hash.yaml
+      - ${base.data-path}/${local.train-path}/logs
     outs:
-      - ${base.data-path}/${local.evaluate-path}/${hash}/geojsons:
-          persist: true
-    metrics:
-      - ${base.data-path}/${local.evaluate-path}/${hash}/metrics.json:
+      - ${base.data-path}/${local.evaluate-path}/${base.ihc-type}/${hash}/geojsons:
           persist: true
 
   geojson_upload:
@@ -74,10 +89,9 @@ stages:
       --remote-path ${base.data-path}
       --ihc-type ${base.ihc-type}
       --mapping-file ${base.mapping-file}
-      --recurse
       --extension .geojson
-      --rel-path ${remote.geojson-path}
-      --remote-rel-path ${local.geojson-path}
+      --rel-path ${remote.evaluate-path}/${base.ihc-type}/${hash}/geojsons
+      --remote-rel-path ${local.evaluate-path}/${base.ihc-type}/${hash}/geojsons
     deps:
       - ${base.data-path}/${local.evaluate-path}/${hash}/geojsons
     

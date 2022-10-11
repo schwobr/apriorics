@@ -10,7 +10,6 @@ from pathaia.patches.functional_api import slide_rois_no_image
 from pathaia.util.paths import get_files
 from pathaia.util.types import Patch, Slide
 from skimage.morphology import remove_small_objects
-from skimage.transform import resize
 
 parser = ArgumentParser(prog="Generates the PathAIA patch CSVs for slides.")
 parser.add_argument(
@@ -41,17 +40,25 @@ parser.add_argument(
     help="Specify to recurse through slidefolder when looking for svs files. Optional.",
 )
 parser.add_argument(
+    "--ihc-type",
+    help="Name of the IHC.",
+    required=True,
+)
+parser.add_argument(
+    "--slide-extension",
+    default=".svs",
+    help="File extension of slide files. Default .svs.",
+)
+parser.add_argument(
+    "--mask-extension",
+    default=".tif",
+    help="File extension of slide files. Default .svs.",
+)
+parser.add_argument(
     "--patch-size",
     type=int,
     default=1024,
     help="Size of the (square) patches to extract. Default 1024.",
-)
-parser.add_argument(
-    "--file-filter",
-    help=(
-        "Regex filter input svs files by names. To filter a specific ihc id x, should"
-        r' be "^21I\d{6}-\d-\d\d-x_\d{6}". Optional.'
-    ),
 )
 parser.add_argument(
     "--level",
@@ -83,32 +90,26 @@ parser.add_argument(
 )
 
 
-def get_mask_filter(mask, thumb_size=2000):
-    thumb = np.asarray(mask.get_thumbnail((thumb_size, thumb_size)).convert("L")) > 0
-
-    def _filter(x):
-        mask = resize(thumb, x.shape[:2])
-        return mask
-
-    return _filter
-
-
 if __name__ == "__main__":
-    args = parser.parse_args()
-    input_files = get_files(args.slidefolder, extensions=".svs", recurse=args.recurse)
+    args = parser.parse_known_args()[0]
+    input_files = get_files(
+        args.slidefolder / args.ihc_type / "HE",
+        extensions=args.slide_extension,
+        recurse=args.recurse,
+    )
     if args.file_filter is not None:
         filter_regex = re.compile(args.file_filter)
         input_files = input_files.filter(lambda x: filter_regex.match(x.name))
     input_files.sort(key=lambda x: x.stem)
 
-    outfolder = args.outfolder / f"{args.patch_size}_{args.level}/patch_csvs"
+    outfolder = (
+        args.outfolder / args.ihc_type / f"{args.patch_size}_{args.level}/patch_csvs"
+    )
 
     interval = -int(args.overlap * args.patch_size)
 
     def write_patches(in_file_path):
-        out_file_path = outfolder / in_file_path.relative_to(
-            args.slidefolder
-        ).with_suffix(".csv")
+        out_file_path = outfolder / in_file_path.name.with_suffix(".csv")
         if not args.overwrite and out_file_path.exists():
             return
         if not out_file_path.parent.exists():
@@ -116,7 +117,7 @@ if __name__ == "__main__":
 
         mask_path = args.maskfolder / in_file_path.relative_to(
             args.slidefolder
-        ).with_suffix(".tif")
+        ).with_suffix(args.mask_extension)
         if not mask_path.exists():
             return
 

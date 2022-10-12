@@ -235,7 +235,7 @@ if __name__ == "__main__":
         lambda x: maskfolder / x.with_suffix(args.mask_extension).name
     )
     slide_paths = mask_paths.map(
-        lambda x: args.slidefolder / x.with_suffix(args.slide_extension).name
+        lambda x: slidefolder / x.with_suffix(args.slide_extension).name
     )
 
     split_df = pd.read_csv(

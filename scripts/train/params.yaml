@@ -31,12 +31,13 @@ split:
   nfolds: 5
   test-ratio: 0.1
   update: true
-  filename: splits.csv
+  filename: splits_new.csv
 
 patches:
   patch-size: 256
   level: 0
   overlap: 0
+  filter-pos: 50
 
 train:
   patch-size: 224

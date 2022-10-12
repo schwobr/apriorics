@@ -36,12 +36,9 @@ def split_data_k_fold(
     p = np.ones(k) / k
 
     if previous_splits is not None:
-        n_per_fold = int((n - test_size) / k)
-        n_to_add = max(
-            0, n - test_size - sum([len(v) for v in previous_splits.values()])
-        )
+        n_per_fold = (n - test_size) / k
         test_size -= len(previous_splits["test"])
-        test_size = max(0, test_size)
+        n_to_add = n - test_size - sum([len(v) for v in previous_splits.values()])
 
         for v in previous_splits.values():
             data = np.delete(data, np.argwhere(np.in1d(data, v)).squeeze(1))
@@ -53,7 +50,7 @@ def split_data_k_fold(
                 except KeyError:
                     n_fold = n_per_fold
 
-                p[k] = n_fold / n_to_add
+                p[i] = n_fold / n_to_add
 
     n = len(data)
     test_idxs = rng.choice(np.arange(n), size=test_size, replace=False)
@@ -63,7 +60,7 @@ def split_data_k_fold(
     folds = rng.choice(np.arange(k), size=len(data), p=p)
 
     splits = {}
-    for i in range(splits):
+    for i in range(k):
         splits[str(i)] = data[folds == i]
         if previous_splits is not None:
             splits[str(i)] = np.concatenate((previous_splits[str(i)], splits[str(i)]))

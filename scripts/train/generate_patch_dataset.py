@@ -1,5 +1,4 @@
 import csv
-import re
 from argparse import ArgumentParser
 from multiprocessing import Pool
 from pathlib import Path
@@ -97,9 +96,6 @@ if __name__ == "__main__":
         extensions=args.slide_extension,
         recurse=args.recurse,
     )
-    if args.file_filter is not None:
-        filter_regex = re.compile(args.file_filter)
-        input_files = input_files.filter(lambda x: filter_regex.match(x.name))
     input_files.sort(key=lambda x: x.stem)
 
     outfolder = (
@@ -109,7 +105,7 @@ if __name__ == "__main__":
     interval = -int(args.overlap * args.patch_size)
 
     def write_patches(in_file_path):
-        out_file_path = outfolder / in_file_path.name.with_suffix(".csv")
+        out_file_path = outfolder / in_file_path.with_suffix(".csv").name
         if not args.overwrite and out_file_path.exists():
             return
         if not out_file_path.parent.exists():

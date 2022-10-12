@@ -4,12 +4,12 @@ stages:
     cmd: python ../utils/file_transfer.py --out-csv .downloaded_slides.csv --data-path
       '/data/anapath/AprioricsSlides' --ihc-type 'PHH3' --mapping-file '../../ihc_mapping.json'
       --mask-extension '.tif' --remote-path '/media/AprioricsSlides' --slide-extension
-      '.svs' --slide-path 'slides' --clean-previous --import-ihc --extension .svs
-      --rel-path slides --remote-rel-path .
+      '.svs' --clean-previous --import-ihc --extension .svs --rel-path slides --remote-rel-path
+      .
     outs:
     - path: .downloaded_slides.csv
-      md5: 660225c7236a628c1e954a7d8c781809
-      size: 129331
+      md5: a9cd34b77800068fa1ad8eff1ce98fb9
+      size: 134370
   mask_extraction:
     cmd: python register_extract_polygons_masks_mp.py --data-path '/data/anapath/AprioricsSlides'
       --ihc-type 'PHH3' --mapping-file '../../ihc_mapping.json' --mask-extension '.tif'

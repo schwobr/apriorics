@@ -15,10 +15,10 @@ stages:
   split_dataset:
     cmd: >-
       python split_dataset.py
-        --maskfolder ${base.data-path}/${local.mask-path}
-        --out-csv ${base.data-path}/${local.train-path}/${base.ihc-type}/${split.filename}
-        ${base}
-        ${split}
+      --maskfolder ${base.data-path}/${local.mask-path}
+      --out-csv ${base.data-path}/${local.train-path}/${base.ihc-type}/${split.filename}
+      ${base}
+      ${split}
     deps:
       - .downloaded_slides.csv
       - ${base.data-path}/${local.mask-path}/${base.ihc-type}
@@ -39,7 +39,7 @@ stages:
       - .downloaded_slides.csv
       - ${base.data-path}/${local.mask-path}/${base.ihc-type}
     outs:
-      - ${base.data-path}/${local.train-path}/${base.ihc-type}/{patches.patch-size}_{patches.level}/patch_csvs:
+      - ${base.data-path}/${local.train-path}/${base.ihc-type}/${patches.patch-size}_${patches.level}/patch_csvs:
           persist: true
 
   train:
@@ -54,10 +54,11 @@ stages:
       --maskfolder ${base.data-path}/${local.mask-path}
       --trainfolder ${base.data-path}/${local.train-path}
     deps:
-      - ${base.data-path}/${local.train-path}/${base.ihc-type}/{patches.patch-size}_{patches.level}/patch_csvs
+      - ${base.data-path}/${local.train-path}/${base.ihc-type}/${patches.patch-size}_${patches.level}/patch_csvs
       - ${base.data-path}/${local.train-path}/${base.ihc-type}/${split.filename}
     outs:
-      - .model_hash.yaml
+      - .model_hash.yaml:
+          persist: true
       - ${base.data-path}/${local.train-path}/logs:
           persist: true
 

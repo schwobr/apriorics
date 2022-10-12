@@ -9,7 +9,8 @@ stages:
       --rel-path ${local.slide-path}
       --remote-rel-path ${remote.slide-path}
     outs:
-      - .downloaded_slides.csv
+      - .downloaded_slides.csv:
+          persist: true
     always_changed: true
 
   mask_extraction:

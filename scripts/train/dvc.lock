@@ -4,8 +4,8 @@ stages:
     cmd: python ../utils/file_transfer.py --out-csv .downloaded_slides.csv --data-path
       '/data/anapath/AprioricsSlides' --ihc-type 'PHH3' --mapping-file '../../ihc_mapping.json'
       --mask-extension '.tif' --remote-path '/media/AprioricsSlides' --slide-extension
-      '.svs' --seed 42 --clean-previous --import-ihc --extension .svs --rel-path slides
-      --remote-rel-path .
+      '.svs' --seed 42 --clean-previous --extension .svs --rel-path slides --remote-rel-path
+      .
     outs:
     - path: .downloaded_slides.csv
       md5: a9cd34b77800068fa1ad8eff1ce98fb9

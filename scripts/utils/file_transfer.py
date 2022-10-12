@@ -1,6 +1,8 @@
 import json
+import os
 import shutil
 from argparse import ArgumentParser
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +22,7 @@ parser.add_argument("--ihc-type", required=True)
 parser.add_argument("--mapping-file", type=Path, required=True)
 parser.add_argument("--recurse", action="store_true")
 parser.add_argument("--out-csv", type=Path)
+parser.add_argument("--num-workers", type=int, default=os.cpu_count())
 
 
 if __name__ == "__main__":
@@ -44,8 +47,7 @@ if __name__ == "__main__":
 
     files = get_files(remote_path, extensions=args.extension, recurse=args.recurse)
 
-    data = {"id": [], "path": []}
-    for file in files:
+    def transfer_file(file):
         try:
             info = get_info_from_filename(file.stem, ihc_mapping)
         except ValueError:
@@ -58,18 +60,24 @@ if __name__ == "__main__":
             info["ihc_type"] == args.ihc_type
             and (info["slide_type"] == "HE" or args.import_ihc)
         ):
-            continue
+            return
 
         outfolder = local_path / info["ihc_type"] / info["slide_type"]
         if not outfolder.exists():
             outfolder.mkdir(parents=True)
 
         outfile = outfolder / f"{info['block']}{file.suffix}"
-        data["id"].append(file.stem)
-        data["path"].append(str(outfile))
         if not outfile.exists():
             print(outfile)
             shutil.copyfile(file, outfile)
+        return file.stem, str(outfile)
+
+    data = {"id": [], "path": []}
+    with ThreadPoolExecutor(max_workers=args.num_workers) as pool:
+        for res in pool.map(transfer_file, files):
+            if res is not None:
+                data["id"].append(res[0])
+                data["path"].append(res[1])
 
     if args.out_csv is not None:
         df = pd.DataFrame(data)

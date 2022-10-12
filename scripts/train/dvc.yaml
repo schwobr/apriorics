@@ -9,7 +9,8 @@ stages:
       --rel-path ${local.slide-path}
       --remote-rel-path ${remote.slide-path}
     outs:
-      - .downloaded_slides.csv
+      - .downloaded_slides.csv:
+          persist: true
     always_changed: true
 
   split_dataset:
@@ -68,6 +69,8 @@ stages:
     cmd: >-
       python predict_export_geojsons.py
       --outfolder ${base.data-path}/${local.evaluate-path}
+      --slidefolder ${base.data-path}/${local.slide-path}
+      --trainfolder ${base.data-path}/${local.train-path}
       --version ${hash}
       --splitfile ${split.filename}
       --base-size ${patches.patch-size}

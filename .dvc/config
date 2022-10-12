@@ -7,4 +7,4 @@
     url = /data/anapath/AprioricsSlides/.cache
 [cache]
     local = cache
-    type = reflink,hardlink,symlink,copy
+    type = hardlink,symlink

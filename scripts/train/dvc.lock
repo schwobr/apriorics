@@ -47,3 +47,27 @@ stages:
     - path: /data/anapath/AprioricsSlides/train/PHH3/splits_new.csv
       md5: baeef17c0dfd18faba62affa19df4ca2
       size: 4761
+  train:
+    cmd: python train_segmentation.py --hash-file .model_hash.yaml --data-path '/data/anapath/AprioricsSlides'
+      --ihc-type 'PHH3' --mapping-file '../../ihc_mapping.json' --mask-extension '.tif'
+      --remote-path '/media/AprioricsSlides' --slide-extension '.svs' --seed 42 --patch-size
+      224 --level 0 --gpu 0 --batch-size 32 --lr 0.0002 --wd 0.01 --epochs 10 --num-workers
+      40 --scheduler 'one-cycle' --model 'unet/resnet50' --loss 'bce' --fold 0 --splitfile
+      splits_new.csv --base-size 256 --slidefolder /data/anapath/AprioricsSlides/slides
+      --maskfolder /data/anapath/AprioricsSlides/masks --trainfolder /data/anapath/AprioricsSlides/train
+    deps:
+    - path: /data/anapath/AprioricsSlides/train/PHH3/256_0/patch_csvs
+      md5: 84ac60433914cfc13cbbc1887633ce0a.dir
+      size: 4152043
+      nfiles: 386
+    - path: /data/anapath/AprioricsSlides/train/PHH3/splits_new.csv
+      md5: baeef17c0dfd18faba62affa19df4ca2
+      size: 4761
+    outs:
+    - path: .model_hash.yaml
+      md5: 00c1cde3e1c54925fa5166b327a63d05
+      size: 10
+    - path: /data/anapath/AprioricsSlides/train/logs
+      md5: 34fab1e9049ad33e310dd0994457387b.dir
+      size: 14301114961
+      nfiles: 28

@@ -5,7 +5,6 @@ base:
   mask-extension: .tif
   remote-path: /media/AprioricsSlides
   slide-extension: .svs
-  slide-path: slides
 
 local:
   mask-path: masks

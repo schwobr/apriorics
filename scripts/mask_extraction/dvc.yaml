@@ -2,14 +2,14 @@ stages:
   slide_download:
     cmd: >-
       python ../utils/file_transfer.py
-      --out-csv downloaded_slides.csv
+      --out-csv .downloaded_slides.csv
       ${base}
       ${slide_download}
       --extension ${base.slide-extension}
       --rel-path ${local.slide-path}
       --remote-rel-path ${remote.slide-path}
     outs:
-      - downloaded_slides.csv
+      - .downloaded_slides.csv
     always_changed: true
 
   mask_extraction:
@@ -19,7 +19,7 @@ stages:
       ${mask_extraction}
       ${local}
     deps:
-      - downloaded_slides.csv
+      - .downloaded_slides.csv
     outs:
       - ${base.data-path}/${local.mask-path}/${base.ihc-type}:
           persist: true
@@ -34,7 +34,7 @@ stages:
       --ihc-type ${base.ihc-type}
       --mapping-file ${base.mapping-file}
       --recurse
-      --extension .tif
+      --extension ${base.mask-extension}
       --rel-path ${remote.mask-path}
       --remote-rel-path ${local.mask-path}
     deps:

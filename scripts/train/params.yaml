@@ -47,7 +47,7 @@ train:
   lr: 2e-4
   wd: 0.01
   epochs: 10
-  num-workers: 40
+  num-workers: 32
   scheduler: one-cycle
   model: unet/resnet50
   loss: bce

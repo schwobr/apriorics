@@ -210,7 +210,7 @@ parser.add_argument(
     help="File extension of slide files. Default .svs.",
 )
 parser.add_argument(
-    "--fold", type=int, default=0, help="Fold to use for validation. Default 0."
+    "--fold", default="0", help="Fold to use for validation. Default 0."
 )
 
 if __name__ == "__main__":
@@ -225,7 +225,6 @@ if __name__ == "__main__":
     patch_csv_folder = trainfolder / f"{args.base_size}_{args.level}/patch_csvs"
     maskfolder = args.maskfolder / args.ihc_type / "HE"
     slidefolder = args.slidefolder / args.ihc_type / "HE"
-    stain_matrices_folder = trainfolder / "stain_matrices"
     logfolder = args.trainfolder / "logs"
 
     patches_paths = get_files(
@@ -245,14 +244,6 @@ if __name__ == "__main__":
     val_idxs = (split_df["split"] == args.fold).values
     train_idxs = ~val_idxs
 
-    if stain_matrices_folder is not None:
-        stain_matrices_paths = mask_paths.map(
-            lambda x: stain_matrices_folder / x.with_suffix(".npy").name
-        )
-        stain_matrices_paths = stain_matrices_paths[train_idxs]
-    else:
-        stain_matrices_paths = None
-
     transforms = [
         RandomCrop(args.patch_size, args.patch_size),
         Flip(),
@@ -265,7 +256,6 @@ if __name__ == "__main__":
         slide_paths[train_idxs],
         mask_paths[train_idxs],
         patches_paths[train_idxs],
-        stain_matrices_paths,
         transforms=transforms,
     )
     val_ds = SegmentationDataset(

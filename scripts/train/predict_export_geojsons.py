@@ -50,6 +50,12 @@ parser.add_argument(
     required=True,
 )
 parser.add_argument(
+    "--ihc-type",
+    choices=IHCS,
+    help=f"Name of the IHC to train for. Must be one of {', '.join(IHCS)}.",
+    required=True,
+)
+parser.add_argument(
     "--outfolder", type=Path, help="Output folder for geojsons.", required=True
 )
 parser.add_argument(

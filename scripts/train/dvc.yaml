@@ -97,5 +97,5 @@ stages:
       --rel-path ${remote.evaluate-path}/${base.ihc-type}/${hash}/geojsons
       --remote-rel-path ${local.evaluate-path}/${base.ihc-type}/${hash}/geojsons
     deps:
-      - ${base.data-path}/${local.evaluate-path}/${hash}/geojsons
+      - ${base.data-path}/${local.evaluate-path}/${base.ihc-type}/${hash}/geojsons
     

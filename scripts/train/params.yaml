@@ -26,6 +26,7 @@ remote:
 slide_download:
   clean-previous: true
   import-ihc: false
+  add-tree: true
 
 split:
   nfolds: 5

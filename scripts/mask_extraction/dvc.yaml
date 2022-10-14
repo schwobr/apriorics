@@ -38,6 +38,7 @@ stages:
       --extension ${base.mask-extension}
       --rel-path ${remote.mask-path}
       --remote-rel-path ${local.mask-path}
+      --add-tree
     deps:
       - ${base.data-path}/${local.mask-path}/${base.ihc-type}
 
@@ -64,5 +65,6 @@ stages:
       --extension .geojson
       --rel-path ${remote.geojson-path}
       --remote-rel-path ${local.geojson-path}
+      --add-tree
     deps:
       - ${base.data-path}/${local.geojson-path}/${base.ihc-type}

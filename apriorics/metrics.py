@@ -1,7 +1,9 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 import torch
-from torchmetrics import CatMetric, MetricCollection
+from pathaia.util.basic import ifnone
+from skimage.measure import label
+from torchmetrics import CatMetric, Metric, MetricCollection
 
 
 @torch.jit.unused
@@ -123,3 +125,85 @@ class DiceScore(CatMetric):
         dices = super().compute()
         dices = torch.as_tensor(dices)
         return _reduce(dices, reduction=self.reduction)
+
+
+class DetectionSegmentationMetrics(Metric):
+    def __init__(
+        self,
+        iou_thresholds: Optional[Sequence[float]] = None,
+        clf_thresholds: Optional[Sequence[float]] = None,
+        main_clf_threshold: float = 0.5,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.iou_thresholds = ifnone(
+            list(iou_thresholds), torch.arange(0.5, 1, 0.05).tolist()
+        )
+        self.clf_thresholds = ifnone(
+            list(clf_thresholds), torch.arange(0, 1, 0.01).tolist()
+        )
+        self.main_clf_threshold = main_clf_threshold
+
+        self.add_state(
+            "tp",
+            default=torch.zeros((len(self.clf_thresholds), len(self.iou_thresholds))),
+            dist_reduce_fx="sum",
+        )
+        self.add_state(
+            "fp",
+            default=torch.zeros((len(self.clf_thresholds), len(self.iou_thresholds))),
+            dist_reduce_fx="sum",
+        )
+        self.add_state(
+            "fn",
+            default=torch.zeros((len(self.clf_thresholds), len(self.iou_thresholds))),
+            dist_reduce_fx="sum",
+        )
+
+    def update(self, input: torch.Tensor, target: torch.Tensor):
+        for y, y_hat in zip(input, target):
+            for i, clf_threshold in enumerate(self.clf_thresholds):
+                labels_pred, n_pred = label(
+                    (y > clf_threshold).detach().cpu().numpy(), return_num=True
+                )
+                labels_target, n_target = label(
+                    y_hat.bool().cpu().numpy(), return_num=True
+                )
+                if n_target == 0:
+                    self.fp[i] += n_pred
+                    continue
+                if n_pred == 0:
+                    self.fn[i] += n_target
+                    continue
+                missing = torch.ones((len(self.iou_thresholds), n_pred, n_target))
+                for k_pred in range(n_pred):
+                    for k_target in range(n_target):
+                        mask_pred = labels_pred == k_pred
+                        mask_target = labels_target == k_target
+                        iou = (mask_pred & mask_target).sum() / (
+                            (mask_pred | mask_target).sum() + 1e-7
+                        )
+                        for j, iou_threshold in enumerate(self.iou_thresholds):
+                            if iou > iou_threshold:
+                                missing[j, k_pred, k_target] = 0
+                self.fp[i] = missing.all(2).sum(-1)
+                self.fn[i] = missing.all(1).sum(-1)
+
+    def compute(self) -> Dict[str, torch.Tensor]:
+        precisions = self.tp / (self.tp + self.fp)
+        recalls = self.tp / (self.tp + self.fn)
+        i_50 = self.iou_thresholds.index(0.5)
+        i_75 = self.iou_thresholds.index(0.75)
+        j_main = self.clf_thresholds.index(self.main_clf_threshold)
+        res = {
+            "precision_50": precisions[i_50, j_main],
+            "precision_75": precisions[i_75, j_main],
+            "precision_mean": precisions[:, j_main].mean(),
+            "recall_50": recalls[i_50, j_main],
+            "recall_75": recalls[i_75, j_main],
+            "recall_mean": recalls[:, j_main].mean(),
+            "AUPRC_50": -torch.trapz(precisions[i_50], recalls[i_50]),
+            "AUPRC_75": -torch.trapz(precisions[i_75], recalls[i_75]),
+            "AUPRC_mean": -torch.trapz(precisions, recalls).mean(),
+        }
+        return res

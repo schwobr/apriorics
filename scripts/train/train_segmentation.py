@@ -30,7 +30,7 @@ from apriorics.data import (
     ValidationPositiveSampler,
 )
 from apriorics.losses import get_loss
-from apriorics.metrics import DiceScore
+from apriorics.metrics import DetectionSegmentationMetrics, DiceScore
 from apriorics.model_components.normalization import group_norm
 from apriorics.plmodules import BasicSegmentationModule, get_scheduler_func
 from apriorics.stain_augment import StainAugmentor
@@ -314,6 +314,7 @@ if __name__ == "__main__":
             Precision(),
             Recall(),
             Specificity(),
+            DetectionSegmentationMetrics(),
         ],
         stain_augmentor=StainAugmentor() if args.augment_stain else None,
     )

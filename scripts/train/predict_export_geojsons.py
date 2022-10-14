@@ -6,7 +6,6 @@ import geopandas
 import pandas as pd
 import torch
 from albumentations import Crop
-from albumentations.augmentations.crops.functional import get_center_crop_coords
 from pathaia.util.paths import get_files
 from pytorch_lightning.utilities.seed import seed_everything
 from shapely.affinity import translate
@@ -105,6 +104,9 @@ parser.add_argument(
         "Size of the patches used before crop for training. Must be greater or equal "
         "to patch_size. Default 1024."
     ),
+)
+parser.add_argument(
+    "--level", type=int, default=0, help="WSI level for patch extraction. Default 0."
 )
 parser.add_argument(
     "--num-workers",
@@ -239,11 +241,10 @@ if __name__ == "__main__":
                     idx = batch_idx * args.batch_size + k
                     patch = ds.patches[idx]
                     polygon = mask_to_polygons_layer(mask, angle_th=0, distance_th=0)
-                    x1, y1, _, _ = get_center_crop_coords(
-                        patch.size.y, patch.size.x, args.patch_size, args.patch_size
-                    )
                     polygon = translate(
-                        polygon, xoff=patch.position.x + x1, yoff=patch.position.y + y1
+                        polygon,
+                        xoff=patch.position.x + crop[0],
+                        yoff=patch.position.y + crop[1],
                     )
 
                     if (

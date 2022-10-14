@@ -21,6 +21,7 @@ remote:
 slide_download:
   clean-previous: true
   import-ihc: true
+  add-tree: true
 
 mask_extraction:
   dab-thr: 0.04

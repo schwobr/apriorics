@@ -27,21 +27,6 @@ stages:
       - ${base.data-path}/${local.wkt-path}/${base.ihc-type}:
           persist: true
 
-  mask_upload:
-    cmd: >-
-      python ../utils/file_transfer.py
-      --data-path ${base.remote-path}
-      --remote-path ${base.data-path}
-      --ihc-type ${base.ihc-type}
-      --mapping-file ${base.mapping-file}
-      --recurse
-      --extension ${base.mask-extension}
-      --rel-path ${remote.mask-path}
-      --remote-rel-path ${local.mask-path}
-      --add-tree
-    deps:
-      - ${base.data-path}/${local.mask-path}/${base.ihc-type}
-
   wkt_to_geojson:
     cmd: >-
       python ../utils/wkt2geojsons.py

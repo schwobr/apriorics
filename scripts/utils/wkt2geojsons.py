@@ -6,6 +6,7 @@ import geopandas
 from pathaia.util.paths import get_files
 from shapely import wkt
 from shapely.geometry import MultiPolygon, Polygon
+from shapely.ops import clip_by_rect
 
 parser = ArgumentParser("Transforms wkt files into geojson format.")
 parser.add_argument(
@@ -21,6 +22,7 @@ parser.add_argument(
     "--geojson-path", type=Path, help="Output folder for geojson files.", required=True
 )
 parser.add_argument("--ihc-type", required=True)
+parser.add_argument("--crop", nargs=4)
 
 
 if __name__ == "__main__":
@@ -50,6 +52,10 @@ if __name__ == "__main__":
             polygons = wkt.load(f)
         if isinstance(polygons, Polygon):
             polygons = MultiPolygon(polygons=[polygons])
+
+        if args.crop is not None:
+            x0, y0, x1, y1 = args.crop
+            polygons = clip_by_rect(polygons, x0, y0, x1, y1)
 
         if not outfile.parent.exists():
             outfile.parent.mkdir(parents=True)

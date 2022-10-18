@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional, Sequence
 
+import numpy as np
 import torch
 from pathaia.util.basic import ifnone
 from skimage.measure import label
@@ -132,17 +133,11 @@ class DetectionSegmentationMetrics(Metric):
         self,
         iou_thresholds: Optional[Sequence[float]] = None,
         clf_thresholds: Optional[Sequence[float]] = None,
-        main_clf_threshold: float = 0.5,
         **kwargs
     ):
         super().__init__(**kwargs)
-        self.iou_thresholds = ifnone(
-            list(iou_thresholds), torch.arange(0.5, 1, 0.05).tolist()
-        )
-        self.clf_thresholds = ifnone(
-            list(clf_thresholds), torch.arange(0, 1, 0.01).tolist()
-        )
-        self.main_clf_threshold = main_clf_threshold
+        self.iou_thresholds = ifnone(iou_thresholds, torch.arange(0, 1, 0.05).tolist())
+        self.clf_thresholds = ifnone(clf_thresholds, torch.arange(0, 1, 0.05).tolist())
 
         self.add_state(
             "tp",
@@ -175,35 +170,72 @@ class DetectionSegmentationMetrics(Metric):
                 if n_pred == 0:
                     self.fn[i] += n_target
                     continue
-                missing = torch.ones((len(self.iou_thresholds), n_pred, n_target))
+                missing = torch.ones(
+                    (len(self.iou_thresholds), n_pred, n_target), device=self.tp.device
+                )
                 for k_pred in range(n_pred):
+                    mask_pred = labels_pred == (k_pred + 1)
+                    ii, jj = np.nonzero(mask_pred)
+                    y0, y1 = ii.min(), ii.max()
+                    x0, x1 = jj.min(), jj.max()
+                    area_pred = (y1 - y0 + 1) * (x1 - x0 + 1)
+                    bbox_pred = np.array([x0, y0, x1, y1])
                     for k_target in range(n_target):
-                        mask_pred = labels_pred == k_pred
-                        mask_target = labels_target == k_target
-                        iou = (mask_pred & mask_target).sum() / (
-                            (mask_pred | mask_target).sum() + 1e-7
+                        mask_target = labels_target == (k_target + 1)
+                        ii, jj = np.nonzero(mask_target)
+                        y0, y1 = ii.min(), ii.max()
+                        x0, x1 = jj.min(), jj.max()
+                        area_target = (y1 - y0 + 1) * (x1 - x0 + 1)
+                        bbox_target = np.array([x0, y0, x1, y1])
+                        bbox_inter = np.concatenate(
+                            (
+                                np.maximum(bbox_pred[:2], bbox_target[:2]),
+                                np.minimum(bbox_pred[2:], bbox_target[2:]),
+                            )
                         )
-                        for j, iou_threshold in enumerate(self.iou_thresholds):
-                            if iou > iou_threshold:
-                                missing[j, k_pred, k_target] = 0
-                self.fp[i] = missing.all(2).sum(-1)
-                self.fn[i] = missing.all(1).sum(-1)
+                        x0, y0, x1, y1 = bbox_inter
+                        area_inter = (y1 - y0 + 1) * (x1 - x0 + 1)
+                        iou = area_inter / (area_pred + area_target - area_inter + 1e-7)
+                        missing[iou > self.iou_thresholds, k_pred, k_target] = 0
+                self.fp[i] += missing.all(2).sum(-1)
+                self.fn[i] += missing.all(1).sum(-1)
+                self.tp[i] += (1 - missing).any(1).sum(-1)
 
     def compute(self) -> Dict[str, torch.Tensor]:
-        precisions = self.tp / (self.tp + self.fp)
-        recalls = self.tp / (self.tp + self.fn)
-        i_50 = self.iou_thresholds.index(0.5)
-        i_75 = self.iou_thresholds.index(0.75)
-        j_main = self.clf_thresholds.index(self.main_clf_threshold)
+        precisions = self.tp / (self.tp + self.fp + 1e-7)
+        recalls = self.tp / (self.tp + self.fn + 1e-7)
+        i_25 = self.clf_thresholds.index(0.25)
+        i_50 = self.clf_thresholds.index(0.5)
+        i_75 = self.clf_thresholds.index(0.75)
+        j_25 = self.iou_thresholds.index(0.25)
+        j_50 = self.iou_thresholds.index(0.5)
+        j_75 = self.iou_thresholds.index(0.75)
         res = {
-            "precision_50": precisions[i_50, j_main],
-            "precision_75": precisions[i_75, j_main],
-            "precision_mean": precisions[:, j_main].mean(),
-            "recall_50": recalls[i_50, j_main],
-            "recall_75": recalls[i_75, j_main],
-            "recall_mean": recalls[:, j_main].mean(),
-            "AUPRC_50": -torch.trapz(precisions[i_50], recalls[i_50]),
-            "AUPRC_75": -torch.trapz(precisions[i_75], recalls[i_75]),
-            "AUPRC_mean": -torch.trapz(precisions, recalls).mean(),
+            "precision_25": precisions[i_50, j_25],
+            "precision_50": precisions[i_50, j_50],
+            "precision_75": precisions[i_50, j_75],
+            "precision_50+": precisions[i_50, j_50:].mean(),
+            "recall_25": recalls[i_50, j_25],
+            "recall_50": recalls[i_50, j_50],
+            "recall_75": recalls[i_50, j_75],
+            "recall_50+": recalls[i_50, j_50:].mean(),
+            "AUPRC.25": -torch.trapz(
+                precisions[
+                    i_25,
+                ],
+                recalls[i_25],
+            ),
+            "AUPRC.5": -torch.trapz(
+                precisions[
+                    i_50,
+                ],
+                recalls[i_50],
+            ),
+            "AUPRC.75": -torch.trapz(
+                precisions[
+                    i_75,
+                ],
+                recalls[i_75],
+            ),
         }
         return res

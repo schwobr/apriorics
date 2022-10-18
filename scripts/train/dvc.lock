@@ -14,7 +14,7 @@ stages:
     cmd: python generate_patch_dataset.py --data-path '/data/anapath/AprioricsSlides'
       --ihc-type 'PHH3' --mapping-file '../../ihc_mapping.json' --mask-extension '.tif'
       --remote-path '/media/AprioricsSlides' --slide-extension '.svs' --seed 42 --patch-size
-      256 --level 0 --overlap 0 --filter-pos 50 --slidefolder /data/anapath/AprioricsSlides/slides
+      256 --level 0 --overlap 0.1 --filter-pos 0 --overwrite --slidefolder /data/anapath/AprioricsSlides/slides
       --maskfolder /data/anapath/AprioricsSlides/masks --outfolder /data/anapath/AprioricsSlides/train
     deps:
     - path: .downloaded_slides.csv
@@ -26,8 +26,8 @@ stages:
       nfiles: 386
     outs:
     - path: /data/anapath/AprioricsSlides/train/PHH3/256_0/patch_csvs
-      md5: 84ac60433914cfc13cbbc1887633ce0a.dir
-      size: 4152043
+      md5: af2e4db63cdaed85e1dd786e02a95a87.dir
+      size: 925185768
       nfiles: 386
   split_dataset:
     cmd: python split_dataset.py --maskfolder /data/anapath/AprioricsSlides/masks

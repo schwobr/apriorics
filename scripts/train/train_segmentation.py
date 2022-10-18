@@ -271,12 +271,13 @@ if __name__ == "__main__":
         pin_memory=True,
         num_workers=args.num_workers,
         drop_last=True,
-        sampler=BalancedRandomSampler(train_ds, p_pos=0.9),
+        sampler=BalancedRandomSampler(train_ds, p_pos=0.95),
     )
     val_dl = DataLoader(
         val_ds,
         batch_size=args.batch_size,
-        sampler=ValidationPositiveSampler(val_ds),
+        # sampler=ValidationPositiveSampler(val_ds),
+        shuffle=False,
         pin_memory=True,
         num_workers=args.num_workers,
     )

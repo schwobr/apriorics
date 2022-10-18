@@ -136,4 +136,5 @@ pathaia/
 .vscode/site/
 /downloaded_slides.csv
 
-downloaded_slides.csv
+.downloaded_slides.csv
+.model_hash.yaml

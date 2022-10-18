@@ -1,0 +1,59 @@
+base:
+  data-path: /data/anapath/AprioricsSlides
+  ihc-type: PHH3
+  mapping-file: ../../ihc_mapping.json
+  mask-extension: .tif
+  remote-path: /media/AprioricsSlides
+  slide-extension: .svs
+  seed: 42
+
+local:
+  mask-path: masks
+  slide-path: slides
+  wkt-path: wkts
+  geojson-path: geojsons
+  train-path: train
+  evaluate-path: evaluate
+
+remote:
+  mask-path: masks
+  slide-path: .
+  wkt-path: wkts
+  geojson-path: geojsons
+  train-path: train
+  evaluate-path: evaluate
+
+slide_download:
+  clean-previous: true
+  import-ihc: false
+  add-tree: true
+
+split:
+  nfolds: 5
+  test-ratio: 0.1
+  update: true
+  filename: splits_new.csv
+
+patches:
+  patch-size: 256
+  level: 0
+  overlap: 0.1
+  filter-pos: 0
+  overwrite: true
+
+train:
+  patch-size: 224
+  level: 0
+  gpu: 0
+  batch-size: 32
+  lr: 2e-4
+  wd: 0.01
+  epochs: 20
+  num-workers: 32
+  scheduler: one-cycle
+  model: unet/resnet50
+  loss: bce
+  fold: 0
+
+evaluate:
+  area-threshold: 50

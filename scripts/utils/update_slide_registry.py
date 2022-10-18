@@ -2,9 +2,10 @@ import argparse
 import json
 import sqlite3
 
-from apriorics.data_utils import create_database, get_info_from_filename
 from ordered_set import OrderedSet
 from pathaia.util.paths import get_files
+
+from apriorics.data_utils import create_database, get_info_from_filename
 
 parser = argparse.ArgumentParser()
 parser.add_argument("registry")

@@ -1,0 +1,101 @@
+stages:
+  slide_download:
+    cmd: >-
+      python ../utils/file_transfer.py
+      --out-csv .downloaded_slides.csv
+      ${base}
+      ${slide_download}
+      --extension ${base.slide-extension}
+      --rel-path ${local.slide-path}
+      --remote-rel-path ${remote.slide-path}
+    outs:
+      - .downloaded_slides.csv:
+          persist: true
+    always_changed: true
+
+  split_dataset:
+    cmd: >-
+      python split_dataset.py
+      --maskfolder ${base.data-path}/${local.mask-path}
+      --out-csv ${base.data-path}/${local.train-path}/${base.ihc-type}/${split.filename}
+      ${base}
+      ${split}
+    deps:
+      - .downloaded_slides.csv
+      - ${base.data-path}/${local.mask-path}/${base.ihc-type}
+    outs:
+      - ${base.data-path}/${local.train-path}/${base.ihc-type}/${split.filename}:
+          persist: true
+
+  generate_patch_csvs:
+    cmd: >-
+      python generate_patch_dataset.py
+      ${base}
+      ${patches}
+      --slidefolder ${base.data-path}/${local.slide-path}
+      --maskfolder ${base.data-path}/${local.mask-path}
+      --outfolder ${base.data-path}/${local.train-path}
+      
+    deps:
+      - .downloaded_slides.csv
+      - ${base.data-path}/${local.mask-path}/${base.ihc-type}
+    outs:
+      - ${base.data-path}/${local.train-path}/${base.ihc-type}/${patches.patch-size}_${patches.level}/patch_csvs:
+          persist: true
+
+  train:
+    cmd: >-
+      python train_segmentation.py
+      --hash-file .model_hash.yaml
+      ${base}
+      ${train}
+      --splitfile ${split.filename}
+      --base-size ${patches.patch-size}
+      --slidefolder ${base.data-path}/${local.slide-path}
+      --maskfolder ${base.data-path}/${local.mask-path}
+      --trainfolder ${base.data-path}/${local.train-path}
+    deps:
+      - ${base.data-path}/${local.train-path}/${base.ihc-type}/${patches.patch-size}_${patches.level}/patch_csvs
+      - ${base.data-path}/${local.train-path}/${base.ihc-type}/${split.filename}
+    outs:
+      - .model_hash.yaml:
+          persist: true
+      - ${base.data-path}/${local.train-path}/logs:
+          persist: true
+
+  evaluate:
+    vars:
+      - .model_hash.yaml:hash
+    cmd: >-
+      python predict_export_geojsons.py
+      --outfolder ${base.data-path}/${local.evaluate-path}
+      --slidefolder ${base.data-path}/${local.slide-path}
+      --trainfolder ${base.data-path}/${local.train-path}
+      --version ${hash}
+      --splitfile ${split.filename}
+      --base-size ${patches.patch-size}
+      ${base}
+      ${train}
+      ${evaluate}
+    deps:
+      - .model_hash.yaml
+      - ${base.data-path}/${local.train-path}/logs
+    outs:
+      - ${base.data-path}/${local.evaluate-path}/${base.ihc-type}/${hash}/geojsons:
+          persist: true
+
+  geojson_upload:
+    vars:
+      - .model_hash.yaml:hash
+    cmd: >-
+      python ../utils/file_transfer.py
+      --data-path ${base.remote-path}
+      --remote-path ${base.data-path}
+      --ihc-type ${base.ihc-type}
+      --mapping-file ${base.mapping-file}
+      --extension .geojson
+      --rel-path ${remote.evaluate-path}/${base.ihc-type}/${hash}/geojsons
+      --remote-rel-path ${local.evaluate-path}/${base.ihc-type}/${hash}/geojsons
+    deps:
+      - ${base.data-path}/${local.evaluate-path}/${base.ihc-type}/${hash}/geojsons
+    

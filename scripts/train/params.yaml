@@ -1,6 +1,6 @@
 base:
   data-path: /data/anapath/AprioricsSlides
-  ihc-type: PHH3
+  ihc-type: AE1AE3
   mapping-file: ../../ihc_mapping.json
   mask-extension: .tif
   remote-path: /media/AprioricsSlides
@@ -32,12 +32,12 @@ split:
   nfolds: 5
   test-ratio: 0.1
   update: true
-  filename: splits_new.csv
+  filename: splits.csv
 
 patches:
   patch-size: 256
   level: 0
-  overlap: 0.1
+  overlap: 0
   filter-pos: 0
   overwrite: true
 
@@ -56,4 +56,4 @@ train:
   fold: 0
 
 evaluate:
-  area-threshold: 50
+  area-threshold: 200

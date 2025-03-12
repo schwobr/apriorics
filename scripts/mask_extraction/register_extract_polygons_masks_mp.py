@@ -6,17 +6,21 @@ from pathlib import Path
 from subprocess import run
 
 import docker
+import geopandas
 import numpy as np
 from ordered_set import OrderedSet
 from pathaia.patches import slide_rois_no_image
 from pathaia.util.paths import get_files
 from pathaia.util.types import Coord, Patch, Slide
 from PIL import Image
+from rasterio.features import rasterize
 from shapely.affinity import translate
+from shapely.geometry import MultiPolygon, Polygon, box
 from shapely.ops import unary_union
 
+from apriorics.dataset_preparation import filter_thumbnail_mask_extraction
 from apriorics.masks import get_mask_function, get_tissue_mask, update_full_mask_mp
-from apriorics.polygons import mask_to_polygons_layer
+from apriorics.polygons import mask_to_polygons_layer, update_pols_hovernet
 from apriorics.registration import full_registration, get_coord_transform
 
 parser = ArgumentParser(
@@ -26,7 +30,7 @@ parser = ArgumentParser(
     )
 )
 parser.add_argument(
-    "--dab-thr",
+    "--dab_thr",
     type=float,
     default=0.03,
     help=(
@@ -35,7 +39,7 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
-    "--object-min-size",
+    "--object_min-size",
     type=int,
     default=1000,
     help=(
@@ -44,7 +48,7 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
-    "--binary-op",
+    "--binary_op",
     default="closing",
     choices=["none", "closing", "dilation"],
     help=(
@@ -84,32 +88,40 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
-    "--data-path",
+    "--data_path",
     type=Path,
     help="Main data folder containing all input and output subfolders.",
     required=True,
 )
 parser.add_argument(
-    "--slide-path",
+    "--slide_path",
     type=Path,
     help="Input folder that contains input svs slide files.",
     required=True,
 )
 parser.add_argument(
-    "--ihc-type",
+    "--ihc_type",
     help=("Name of the IHC to extract masks from."),
     required=True,
 )
 parser.add_argument(
-    "--tmp-path",
+    "--tmp_path",
     type=Path,
     default="tmp",
     help=(
         "Path to the temporary folder that will be used for computation. Default tmp."
     ),
 )
-parser.add_argument("--mask-path", type=Path, help="Output mask folder.", required=True)
-parser.add_argument("--wkt-path", type=Path, help="Output wkt folder.", required=True)
+parser.add_argument("--mask_path", type=Path, help="Output mask folder.", required=True)
+parser.add_argument(
+    "--geojson_path", type=Path, help="Output geojson folder.", required=True
+)
+parser.add_argument(
+    "--log_path",
+    type=Path,
+    help="Output log folder for unregistered patches.",
+    required=True,
+)
 parser.add_argument(
     "--novips",
     action="store_true",
@@ -119,12 +131,27 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
-    "--num-workers",
+    "--num_workers",
     type=int,
     help="Number of workers to use for processing. Defaults to all available workers.",
 )
 parser.add_argument(
-    "--slide-extension", default=".svs", help="Extension of slide files. Default .svs."
+    "--slide_extension", default=".svs", help="Extension of slide files. Default .svs."
+)
+parser.add_argument(
+    "--hovernet_path", type=Path, help="Path to hovernet geojson folder."
+)
+parser.add_argument(
+    "--iou_thr",
+    type=float,
+    default=0.2,
+    help="Threshold value for hovernet intersection with marked objects.",
+)
+parser.add_argument(
+    "--nuc_min_size", type=float, default=0, help="Min size for cell nuclei in μm²."
+)
+parser.add_argument(
+    "--nuc_max_size", type=float, default=24, help="Max size for cell nuclei in μm²."
 )
 
 
@@ -145,6 +172,34 @@ def get_filefilter(slidefile):
     return _filter
 
 
+def get_patch_iter(slide_he, psize, interval, hovernet_path):
+    for patch in slide_rois_no_image(
+        slide_he,
+        0,
+        (psize, psize),
+        (interval, interval),
+        thumb_size=5000,
+        slide_filters=[filter_thumbnail_mask_extraction],
+    ):
+        if hovernet_path is not None:
+            try:
+                fgdf = geopandas.read_file(
+                    hovernet_path,
+                    engine="pyogrio",
+                    use_arrow=True,
+                    bbox=(*patch.position, *(patch.position + patch.size)),
+                )
+            except Exception as e:
+                print(patch, e)
+                raise
+            fgdf = fgdf.loc[
+                fgdf["geometry"].apply(lambda x: isinstance(x, Polygon)), "geometry"
+            ]
+        else:
+            fgdf = None
+        yield patch, fgdf
+
+
 def pool_init_func(arg_slide_he, arg_slide_ihc, arg_full_mask):
     global slide_he
     global slide_ihc
@@ -154,7 +209,8 @@ def pool_init_func(arg_slide_he, arg_slide_ihc, arg_full_mask):
     full_mask = arg_full_mask
 
 
-def register_extract_mask(args, patch_he):
+def register_extract_mask(args, patch_gdf):
+    patch_he, gdf = patch_gdf
     crop = int(args.crop * args.psize)
     box = (crop, crop, args.psize - crop, args.psize - crop)
 
@@ -162,8 +218,9 @@ def register_extract_mask(args, patch_he):
 
     try:
         coord_tfm = get_coord_transform(slide_he, slide_ihc)
+        if coord_tfm is None:
+            return
     except IndexError:
-
         def coord_tfm(x, y):
             return Coord(x, y)
 
@@ -187,7 +244,7 @@ def register_extract_mask(args, patch_he):
     maxiter = 4
 
     while restart and count < maxiter:
-        restart = not full_registration(
+        container = full_registration(
             slide_he,
             slide_ihc,
             patch_he,
@@ -198,21 +255,35 @@ def register_extract_mask(args, patch_he):
             iterations=iterations,
             threads=1,
         )
+        restart = container is False
         if restart:
             break
         else:
             try:
                 ihc = Image.open(base_path / "ihc_warped.png").convert("RGB").crop(box)
             except FileNotFoundError:
-                print(f"[{pid}] ERROR: HE={patch_he}/IHC={patch_ihc}. Restarting...")
+                print(f"[{pid}] ERROR: HE={patch_he}/IHC={patch_ihc}. Skipping...")
+                container.stop()
+                container.remove()
                 return
             tissue_mask = get_tissue_mask(np.asarray(ihc.convert("L")), whitetol=256)
             if tissue_mask.sum() < 0.999 * tissue_mask.size:
+                container.stop()
+                container.remove()
                 restart = True
                 iterations *= 2
                 count += 1
 
     if restart:
+        try:
+            print(
+                f"[{pid}] Getting out...",
+                container,
+                count,
+                tissue_mask.sum() / tissue_mask.size,
+            )
+        except UnboundLocalError:
+            print(f"[{pid}] Getting out...")
         return
 
     print(f"[{pid}] Computing mask...")
@@ -220,31 +291,59 @@ def register_extract_mask(args, patch_he):
     he = Image.open(base_path / "he.png")
     he = np.asarray(he.convert("RGB").crop(box))
     mask = get_mask_function(args.ihc_type)(he, np.asarray(ihc))
-    update_full_mask_mp(
-        full_mask, mask, *(patch_he.position + crop), *slide_he.dimensions
-    )
-    polygons = mask_to_polygons_layer(mask)
+    polygons = mask_to_polygons_layer(mask, 0, 0)
     x, y = patch_he.position
     moved_polygons = translate(polygons, x + crop, y + crop)
 
+    if gdf is not None:
+        moved_polygons = update_pols_hovernet(
+            moved_polygons,
+            MultiPolygon(gdf.values.tolist()),
+            iou_thr=args.iou_thr,
+            nuc_min_size=args.nuc_min_size,
+            nuc_max_size=args.nuc_max_size,
+        )
+        polygons = translate(moved_polygons, -x - crop, -y - crop)
+        if polygons.geoms:
+            mask = rasterize(polygons.geoms, patch_he.size, dtype=np.uint8).astype(bool)
+        else:
+            mask = np.zeros(patch_he.size, dtype=bool)
+
+    update_full_mask_mp(
+        full_mask, mask, *(patch_he.position + crop), *slide_he.dimensions
+    )
+
+    res = container.exec_run("rm -rf /data/*", stream=True)
+
+    with open(base_path / "log", "ab") as f:
+        for chunk in res.output:
+            f.write(chunk)
+
+    container.stop()
+    container.remove()
+
     print(f"[{pid}] Mask done.")
-    return moved_polygons
+    return (patch_he, moved_polygons)
 
 
 def main(args):
     slidefolder = args.data_path / args.slide_path
     maskfolder = args.data_path / args.mask_path
-    wktfolder = args.data_path / args.wkt_path
+    geojsonfolder = args.data_path / args.geojson_path
     tmpfolder = args.data_path / args.tmp_path
+    logfolder = args.data_path / args.log_path
 
     if not maskfolder.exists():
         maskfolder.mkdir()
 
-    if not wktfolder.exists():
-        wktfolder.mkdir()
+    if not geojsonfolder.exists():
+        geojsonfolder.mkdir()
 
     if not tmpfolder.exists():
         tmpfolder.mkdir()
+
+    if not logfolder.exists():
+        logfolder.mkdir()
 
     interval = -int(args.overlap * args.psize)
 
@@ -264,14 +363,25 @@ def main(args):
     henames = OrderedSet(hefiles.map(lambda x: x.stem.split("-")[0]))
     ihcnames = OrderedSet(ihcfiles.map(lambda x: x.stem.split("-")[0]))
     inter = henames & ihcnames
+
+    if args.hovernet_path is not None:
+        hovernetfolder = args.data_path / args.hovernet_path
+        hovernetfiles = get_files(
+            hovernetfolder / args.ihc_type, extensions=".gpkg", recurse=False
+        )
+        hovernetnames = OrderedSet(hovernetfiles.map(lambda x: x.stem.split("-")[0]))
+        inter = inter & hovernetnames
+        hovernetfiles = hovernetfiles[hovernetnames.index(inter)]
+
     heidxs = henames.index(inter)
     ihcidxs = ihcnames.index(inter)
     hefiles = hefiles[heidxs]
     ihcfiles = ihcfiles[ihcidxs]
 
-    for hefile, ihcfile in zip(hefiles, ihcfiles):
+    for k, (hefile, ihcfile) in enumerate(zip(hefiles, ihcfiles)):
         hefile = Path(hefile)
         ihcfile = Path(ihcfile)
+        hovernetfile = Path(hovernetfiles[k])
 
         maskpath = maskfolder / hefile.relative_to(slidefolder).with_suffix(".png")
         if not maskpath.parent.exists():
@@ -282,8 +392,8 @@ def main(args):
 
         print(hefile, ihcfile)
 
-        slide_he = Slide(slidefolder / hefile, backend="cucim")
-        slide_ihc = Slide(slidefolder / ihcfile, backend="cucim")
+        slide_he = Slide(hefile, backend="cucim")
+        slide_ihc = Slide(ihcfile, backend="cucim")
         w, h = slide_he.dimensions
 
         lock = Lock()
@@ -295,28 +405,50 @@ def main(args):
             initializer=pool_init_func,
             initargs=(slide_he, slide_ihc, full_mask),
         ) as pool:
-            patch_iter = slide_rois_no_image(
+            patch_iter = get_patch_iter(
                 slide_he,
-                0,
-                (args.psize, args.psize),
-                (interval, interval),
-                thumb_size=5000,
-                slide_filters=["full"],
+                args.psize,
+                interval,
+                hovernetfile,
             )
             all_polygons = pool.map(_register_extract_mask, patch_iter)
             pool.close()
             pool.join()
 
-        all_polygons = [x for x in all_polygons if x is not None]
-        all_polygons = unary_union(all_polygons)
+        patch_polygons = []
+        obj_polygons = []
+        for polygon in all_polygons:
+            if polygon is not None:
+                patch, polygon = polygon
+                x, y = patch.position
+                p_w, p_h = patch.size
+                patch_polygons.append(box(x, y, x + p_w, y + p_h))
+                obj_polygons.append(polygon)
+        
+        if not obj_polygons:
+            return
+
+        logfile = logfolder / hefile.relative_to(slidefolder).with_suffix(".geojson")
+        if not logfile.parent.exists():
+            logfile.parent.mkdir(parents=True)
+
+        patch_polygons = unary_union(patch_polygons)
+        if isinstance(patch_polygons, Polygon):
+            patch_polygons = MultiPolygon([patch_polygons])
+
+        geopandas.GeoSeries(patch_polygons.geoms).to_file(logfile)
+
+        obj_polygons = unary_union(obj_polygons)
 
         print("Saving full polygons...")
 
-        wktfile = wktfolder / hefile.relative_to(slidefolder).with_suffix(".wkt")
-        if not wktfile.parent.exists():
-            wktfile.parent.mkdir(parents=True)
-        with wktfile.open("w") as f:
-            f.write(all_polygons.wkt)
+        geojsonfile = geojsonfolder / hefile.relative_to(slidefolder).with_suffix(
+            ".geojson"
+        )
+        if not geojsonfile.parent.exists():
+            geojsonfile.parent.mkdir(parents=True)
+
+        geopandas.GeoSeries(obj_polygons.geoms).to_file(geojsonfile)
 
         print("Polygons saved.")
 

@@ -7,31 +7,25 @@ import horovod.torch as hvd
 import pandas as pd
 import pytorch_lightning as pl
 import torch
-from albumentations import (
-    CenterCrop,
-    Flip,
-    RandomBrightnessContrast,
-    RandomCrop,
-    RandomRotate90,
-    Transpose,
-)
+import yaml
+from albumentations import CenterCrop
+from metrics_config import METRICS
 from pathaia.util.paths import get_files
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CometLogger
 from pytorch_lightning.utilities.seed import seed_everything
 from timm import create_model
 from torch.utils.data import DataLoader
-from torchmetrics import Accuracy, JaccardIndex, Precision, Recall, Specificity
+from transforms_config import get_transforms
 
 from apriorics.data import (
     BalancedRandomSampler,
-    SegmentationDataset,
     ValidationPositiveSampler,
+    get_dataset_cls,
 )
 from apriorics.losses import get_loss
-from apriorics.metrics import DiceScore
 from apriorics.model_components.normalization import group_norm
-from apriorics.plmodules import BasicSegmentationModule, get_scheduler_func
+from apriorics.plmodules import get_model, get_scheduler_func
 from apriorics.stain_augment import StainAugmentor
 from apriorics.transforms import ToTensor
 
@@ -55,6 +49,11 @@ parser = ArgumentParser(
     )
 )
 parser.add_argument(
+    "--hash_file",
+    type=Path,
+    help="File to store comet experiment version hash in. Optional",
+)
+parser.add_argument(
     "--model",
     help=(
         "Model to use for training. If unet, can be formatted as unet/encoder to "
@@ -63,15 +62,15 @@ parser.add_argument(
     required=True,
 )
 parser.add_argument(
-    "--ihc-type",
+    "--ihc_type",
     choices=IHCS,
     help=f"Name of the IHC to train for. Must be one of {', '.join(IHCS)}.",
     required=True,
 )
 parser.add_argument(
-    "--patch-csv-folder",
+    "--trainfolder",
     type=Path,
-    help="Input folder containing PathAIA csv files.",
+    help="Folder containing all train files.",
     required=True,
 )
 parser.add_argument(
@@ -87,24 +86,10 @@ parser.add_argument(
     required=True,
 )
 parser.add_argument(
-    "--stain-matrices-folder",
-    type=Path,
-    help=(
-        "Input folder containing npy stain matrices files for stain augmentation. "
-        "Optional."
-    ),
-)
-parser.add_argument(
-    "--split-csv",
-    type=Path,
-    help="Input csv file for dataset split containing 2 columns: slide and split.",
-    required=True,
-)
-parser.add_argument(
-    "--logfolder",
-    type=Path,
-    help="Output folder for pytorch lightning log files.",
-    required=True,
+    "--splitfile",
+    type=str,
+    default="splits.csv",
+    help="Name of the csv file containing train/valid/test splits. Default splits.csv.",
 )
 parser.add_argument(
     "--gpu",
@@ -118,7 +103,7 @@ parser.add_argument(
     help="Specify when using script with horovodrun. Optional.",
 )
 parser.add_argument(
-    "--batch-size",
+    "--batch_size",
     type=int,
     default=8,
     help=(
@@ -139,25 +124,28 @@ parser.add_argument(
     "--epochs", type=int, default=10, help="Number of epochs to train on. Default 10."
 )
 parser.add_argument(
-    "--patch-size",
+    "--patch_size",
     type=int,
     default=1024,
     help="Size of the input patches used during training. Default 1024.",
 )
 parser.add_argument(
-    "--base-size",
+    "--base_size",
     type=int,
     default=1024,
     help="Size of the original extracted patches. Default 1024.",
 )
 parser.add_argument(
-    "--num-workers",
+    "--level", type=int, default=0, help="WSI level for patch extraction. Default 0."
+)
+parser.add_argument(
+    "--num_workers",
     type=int,
     default=0,
     help="Number of workers to use for data loading. Default 0 (only main process).",
 )
 parser.add_argument(
-    "--freeze-encoder",
+    "--freeze_encoder",
     action="store_true",
     help="Specify to freeze encoder when using unet model. Optional.",
 )
@@ -170,7 +158,7 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
-    "--group-norm",
+    "--group_norm",
     action="store_true",
     help="Specify to use group norm instead of batch norm in model. Optional.",
 )
@@ -183,13 +171,13 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
-    "--grad-accumulation",
+    "--grad_accumulation",
     type=int,
     default=1,
     help="Number of batches to accumulate gradients on. Default 1.",
 )
 parser.add_argument(
-    "--resume-version", help="Version id of a model to load weights from. Optional."
+    "--resume_version", help="Version id of a model to load weights from. Optional."
 )
 parser.add_argument(
     "--seed",
@@ -200,63 +188,119 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
-    "--augment-stain",
+    "--augment_stain",
     action="store_true",
     help="Specify to use stain augmentation. Optional.",
+)
+parser.add_argument(
+    "--slide_extension",
+    default=".svs",
+    help="File extension of slide files. Default .svs.",
+)
+parser.add_argument(
+    "--mask_extension",
+    default=".tif",
+    help="File extension of slide files. Default .svs.",
+)
+parser.add_argument(
+    "--fold", default="0", help="Fold to use for validation. Default 0."
+)
+parser.add_argument(
+    "--p_pos",
+    type=float,
+    default=0.9,
+    help=(
+        "Percentage of masks containing positive pixels to use for training. Default "
+        "0.9."
+    ),
+)
+parser.add_argument(
+    "--data_step",
+    type=int,
+    default=1,
+    help="Give a step n > 1 to load one every n patches only. Default 1.",
+)
+parser.add_argument(
+    "--data_type",
+    choices=["classification", "segmentation", "segmentation_sparse", "detection"],
+    default="segmentation",
+    help=(
+        "Input data type. Must be one of segmentation, segmentation_sparse, "
+        "detection. Default segmentation."
+    ),
+)
+parser.add_argument(
+    "--grad_clip", type=float, help="Value to use for gradient clipping. Optional."
+)
+parser.add_argument(
+    "--log_offline",
+    action="store_true",
+    help="Specify to use comet offline logging. Optional.",
+)
+parser.add_argument(
+    "--p_augment",
+    type=float,
+    default=0.5,
+    help="Probability to use augmentHE on each image. Default 0.5.",
+)
+parser.add_argument(
+    "--transforms",
+    default="base",
+    help="Name of the transform set from transforms_config.py. Default base.",
 )
 
 if __name__ == "__main__":
     __spec__ = None
-    args = parser.parse_args()
+    args = parser.parse_known_args()[0]
     if args.horovod:
         hvd.init()
 
     seed_everything(workers=True)
 
+    trainfolder = args.trainfolder / args.ihc_type
+    patch_csv_folder = trainfolder / f"{args.base_size}_{args.level}/patch_csvs"
+    maskfolder = args.maskfolder / args.ihc_type / "HE"
+    slidefolder = args.slidefolder / args.ihc_type / "HE"
+    logfolder = args.trainfolder / "logs"
+
     patches_paths = get_files(
-        args.patch_csv_folder, extensions=".csv", recurse=False
+        patch_csv_folder, extensions=".csv", recurse=False
     ).sorted(key=lambda x: x.stem)
     mask_paths = patches_paths.map(
-        lambda x: args.maskfolder / x.with_suffix(".tif").name
+        lambda x: maskfolder / x.with_suffix(args.mask_extension).name
     )
     slide_paths = mask_paths.map(
-        lambda x: args.slidefolder / x.with_suffix(".svs").name
+        lambda x: slidefolder / x.with_suffix(args.slide_extension).name
     )
 
-    split_df = pd.read_csv(args.split_csv).sort_values("slide")
+    split_df = pd.read_csv(args.trainfolder / args.splitfile).sort_values("slide")
     split_df = split_df.loc[split_df["slide"].isin(patches_paths.map(lambda x: x.stem))]
-    train_idxs = (split_df["split"] == "train").values
-    val_idxs = ~train_idxs
+    test_idxs = (split_df["split"] == "test").values
+    val_idxs = (split_df["split"] == args.fold).values
+    train_idxs = ~(val_idxs | test_idxs)
 
-    if args.stain_matrices_folder is not None:
-        stain_matrices_paths = mask_paths.map(
-            lambda x: args.stain_matrices_folder / x.with_suffix(".npy").name
-        )
-        stain_matrices_paths = stain_matrices_paths[train_idxs]
-    else:
-        stain_matrices_paths = None
+    transforms = get_transforms(args.transforms, args.patch_size)
 
-    transforms = [
-        RandomCrop(args.patch_size, args.patch_size),
-        Flip(),
-        Transpose(),
-        RandomRotate90(),
-        RandomBrightnessContrast(),
-        ToTensor(),
-    ]
-    train_ds = SegmentationDataset(
-        slide_paths[train_idxs],
-        mask_paths[train_idxs],
-        patches_paths[train_idxs],
-        stain_matrices_paths,
+    dataset_cls = get_dataset_cls(args.data_type)
+    train_ds = dataset_cls(
+        slide_paths=slide_paths[train_idxs],
+        mask_paths=mask_paths[train_idxs],
+        patches_paths=patches_paths[train_idxs],
         transforms=transforms,
+        step=args.data_step,
     )
-    val_ds = SegmentationDataset(
-        slide_paths[val_idxs],
-        mask_paths[val_idxs],
-        patches_paths[val_idxs],
+    val_ds = dataset_cls(
+        slide_paths=slide_paths[val_idxs],
+        mask_paths=mask_paths[val_idxs],
+        patches_paths=patches_paths[val_idxs],
         transforms=[CenterCrop(args.patch_size, args.patch_size), ToTensor()],
+        step=args.data_step,
     )
+
+    train_val_text = "=================Train=================\n"
+    train_val_text += "\n".join(map(lambda x: x.stem, slide_paths[train_idxs]))
+    train_val_text += "\n\n=================Valid=================\n"
+    train_val_text += "\n".join(map(lambda x: x.stem, slide_paths[val_idxs]))
 
     train_dl = DataLoader(
         train_ds,
@@ -264,12 +308,15 @@ if __name__ == "__main__":
         pin_memory=True,
         num_workers=args.num_workers,
         drop_last=True,
-        sampler=BalancedRandomSampler(train_ds, p_pos=0.9),
+        sampler=BalancedRandomSampler(train_ds, p_pos=args.p_pos),
     )
+
+    num_samples = int(1 / args.p_pos * (val_ds.n_pos > 0).sum())
     val_dl = DataLoader(
         val_ds,
         batch_size=args.batch_size,
-        sampler=ValidationPositiveSampler(val_ds),
+        sampler=ValidationPositiveSampler(val_ds, num_samples=num_samples),
+        shuffle=False,
         pin_memory=True,
         num_workers=args.num_workers,
     )
@@ -285,30 +332,33 @@ if __name__ == "__main__":
         encoder_name = model[1]
     else:
         encoder_name = None
-    model = create_model(
-        model[0],
-        encoder_name=encoder_name,
-        pretrained=True,
-        img_size=args.patch_size,
-        num_classes=1,
-        norm_layer=group_norm if args.group_norm else torch.nn.BatchNorm2d,
-    )
+    kwargs = {
+        "pretrained": True,
+        "num_classes": 1,
+        "norm_layer": group_norm if args.group_norm else torch.nn.BatchNorm2d,
+    }
+    if "classification" not in args.data_type:
+        kwargs |= {
+            "encoder_name": encoder_name,
+            "img_size": args.patch_size,
+        }
+    model = create_model(model[0], **kwargs)
 
-    plmodule = BasicSegmentationModule(
-        model,
+    metrics = METRICS["all"]
+    if args.ihc_type in METRICS and "segmentation" in args.data_type:
+        metrics.extend(METRICS[args.ihc_type])
+    plmodule = get_model(
+        args.data_type,
+        model=model,
         loss=get_loss(args.loss),
         lr=args.lr,
         wd=args.wd,
         scheduler_func=scheduler_func,
-        metrics=[
-            JaccardIndex(2),
-            DiceScore(),
-            Accuracy(),
-            Precision(),
-            Recall(),
-            Specificity(),
-        ],
-        stain_augmentor=StainAugmentor() if args.augment_stain else None,
+        metrics=metrics,
+        stain_augmentor=StainAugmentor(p=args.p_augment)
+        if args.augment_stain
+        else None,
+        dl_lengths=(len(train_dl), len(val_dl)),
     )
 
     if args.freeze_encoder:
@@ -317,9 +367,12 @@ if __name__ == "__main__":
     logger = CometLogger(
         api_key=os.environ["COMET_API_KEY"],
         workspace="apriorics",
-        save_dir=args.logfolder,
+        save_dir=logfolder,
         project_name="apriorics",
         auto_metric_logging=False,
+        experiment_name=os.getenv("DVC_EXP_NAME"),
+        offline=args.log_offline,
+        auto_output_logging=False,
     )
 
     if not args.horovod or hvd.rank() == 0:
@@ -327,12 +380,14 @@ if __name__ == "__main__":
 
     ckpt_callback = ModelCheckpoint(
         save_top_k=3,
-        monitor=f"val_loss_{args.loss}",
+        monitor="val_loss",
         save_last=True,
         mode="min",
-        filename=f"{{epoch}}-{{val_loss_{args.loss}:.3f}}",
+        filename="{epoch}-{val_loss:.3f}",
     )
 
+    exp = logger.experiment
+    exp.log_text(train_val_text)
     trainer = pl.Trainer(
         gpus=1 if args.horovod else [args.gpu],
         min_epochs=args.epochs,
@@ -342,19 +397,25 @@ if __name__ == "__main__":
         accumulate_grad_batches=args.grad_accumulation,
         callbacks=[ckpt_callback],
         strategy="horovod" if args.horovod else None,
+        num_sanity_val_steps=0,
+        gradient_clip_val=args.grad_clip,
     )
 
     if args.resume_version is not None:
-        ckpt_path = (
-            args.logfolder / f"apriorics/{args.resume_version}/checkpoints/last.ckpt"
-        )
+        ckpt_path = logfolder / f"apriorics/{args.resume_version}/checkpoints/last.ckpt"
         checkpoint = torch.load(ckpt_path)
         missing, unexpected = plmodule.load_state_dict(
             checkpoint["state_dict"], strict=False
         )
-    trainer.fit(
-        plmodule,
-        train_dataloaders=train_dl,
-        val_dataloaders=val_dl,
-        # ckpt_path=ckpt_path,
-    )
+
+    try:
+        trainer.fit(
+            plmodule,
+            train_dataloaders=train_dl,
+            val_dataloaders=val_dl,
+            # ckpt_path=ckpt_path,
+        )
+    finally:
+        if args.hash_file is not None:
+            with open(args.hash_file, "w") as f:
+                yaml.dump({args.fold: exp.get_key()}, f)

@@ -2,6 +2,7 @@ from typing import Sequence, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from apriorics.metrics import _flatten, _reduce, dice_score
 
@@ -55,7 +56,8 @@ def get_loss_name(loss: nn.Module) -> str:
         return "dice"
     elif isinstance(loss, SumLosses):
         name = "sum"
-        for loss_func, coef in loss.losses_with_coef:
+        for n, loss_func in loss.named_children():
+            coef = loss.coefs[n]
             name += f"_{get_loss_name(loss_func)}_{coef}"
         return name
     else:
@@ -116,11 +118,11 @@ def focal_loss(
     """
     target = _flatten(target).to(dtype=input.dtype)
     input = _flatten(input)
-    input = torch.sigmoid(input).clamp(eps, 1 - eps)
-    focal = -(
-        beta * target * (1 - input).pow(gamma) * input.log()
-        + (1 - beta) * (1 - target) * input.pow(gamma) * (1 - input).log()
-    ).mean(-1)
+    ce = F.binary_cross_entropy_with_logits(input, target, reduction="none")
+    p = torch.sigmoid(input)
+    p_t = p * target + (1 - p) * (1 - target)
+    beta_t = beta * target + (1 - beta) * target
+    focal = beta_t * ce * ((1 - p_t) ** gamma)
     return _reduce(focal, reduction=reduction)
 
 
@@ -184,10 +186,14 @@ class SumLosses(nn.Module):
 
     def __init__(self, *losses_with_coef: Sequence[Tuple[nn.Module, float]]):
         super().__init__()
-        self.losses_with_coef = losses_with_coef
+        self.coefs = {}
+        for loss_func, coef in losses_with_coef:
+            name = get_loss_name(loss_func)
+            self.add_module(name, loss_func)
+            self.coefs[name] = coef
 
     def forward(self, input, target):
         loss = 0
-        for loss_func, coef in self.losses_with_coef:
-            loss += coef * loss_func(input, target)
+        for name, loss_func in self.named_children():
+            loss += self.coefs[name] * loss_func(input, target)
         return loss

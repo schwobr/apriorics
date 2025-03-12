@@ -1,10 +1,11 @@
 import json
-from numbers import Number
 from os import PathLike
-from typing import Any, Optional
+from typing import Optional
 
 import numpy as np
-from nptyping import NDArray
+from albumentations.augmentations.crops.functional import get_center_crop_coords
+from nptyping import Int, NDArray, Number, Shape
+from pathaia.util.basic import ifnone
 from pathaia.util.types import NDBoolMask
 from rasterio import features
 from shapely.affinity import affine_transform
@@ -12,8 +13,8 @@ from shapely.geometry import MultiPolygon, Polygon, shape
 
 
 def get_reduced_coords(
-    coords: NDArray[(Any, 2), Number], angle_th: float, distance_th: float
-) -> NDArray[(Any, 2), int]:
+    coords: NDArray[Shape["*, 2"], Number], angle_th: float, distance_th: float
+) -> NDArray[Shape["*, 2"], Int]:
     r"""
     Given polygon vertices coordinates, deletes those that are too close or that form
     a too small angle.
@@ -135,3 +136,102 @@ def hovernet_to_wkt(
 
     with open(outfile, "w") as f:
         f.write(polygons.wkt)
+
+
+def hovernet_to_geojson(
+    infile: PathLike,
+    outfile: PathLike,
+    crop_size: Optional[int] = None,
+    xoff: Optional[int] = None,
+    yoff: Optional[int] = None,
+):
+    """
+    Take a hovernet json output file and convert it to a geojson file. Optionally crop
+    the center of the polygons.
+
+    Args:
+        infile: path to input hovernet json file.
+        outfile: path to output wkt file.
+        crop_size: Size of the crop zone.
+    """
+    type_info = {
+        0: ["none", [0, 0, 0]],
+        1: ["tumoral", [255, 0, 0]],
+        2: ["immunitaire", [0, 255, 0]],
+        3: ["conjonctif", [0, 0, 255]],
+        4: ["nécrose", [255, 255, 0]],
+        5: ["épithélial", [255, 165, 0]],
+    }
+    with open(infile, "r") as f:
+        hovernet_dict = json.load(f)
+    geojson_feats = []
+    xmin = 0
+    ymin = 0
+    xmax = 0
+    ymax = 0
+    for k in hovernet_dict["nuc"]:
+        nuc = hovernet_dict["nuc"][k]
+        coords = np.array(nuc["contour"])
+        bbox = np.array(nuc["bbox"])
+        offset = np.array([[ifnone(xoff, 0), ifnone(yoff, 0)]])
+        coords += offset
+        bbox += offset
+        xmin, ymin = np.minimum((xmin, ymin), bbox[0])
+        xmax, ymax = np.maximum((xmax, ymax), bbox[1])
+        label, color = type_info[nuc["type"]]
+        feat = {
+            "id": k,
+            "type": "Feature",
+            "properties": {
+                "objectType": "annotation",
+                "classification": {"name": label, "color": color},
+            },
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [coords.tolist() + [coords[0].tolist()]],
+                "bbox": bbox.flatten().tolist(),
+            },
+        }
+        geojson_feats.append(feat)
+
+    if crop_size is not None:
+        x0, y0, x1, y1 = get_center_crop_coords(
+            ymax - ymin, xmax - xmin, crop_size, crop_size
+        )
+        xmin += x0
+        ymin += y0
+        xmax += x1
+        ymax += y1
+        geojson_feats = [
+            feat
+            for feat in geojson_feats
+            if feat["geometry"]["bbox"][0] >= xmin
+            and feat["geometry"]["bbox"][1] >= ymin
+            and feat["geometry"]["bbox"][2] <= xmax
+            and feat["geometry"]["bbox"][3] <= ymax
+        ]
+
+    geojson_dict = {"type": "FeatureCollection", "features": geojson_feats}
+    with open(outfile, "w") as f:
+        json.dump(geojson_dict, f)
+
+
+def update_pols_hovernet(
+    pols, hovernet_pols, iou_thr=0.2, nuc_min_size=0, nuc_max_size=24
+):
+    nuc_min_size = nuc_min_size / 0.25**2
+    nuc_max_size = nuc_max_size / 0.25**2
+    filt_pols = []
+    for hovernet_pol in hovernet_pols.geoms:
+        area = hovernet_pol.area
+        if area > nuc_max_size or area < nuc_min_size or not hovernet_pol.is_valid:
+            continue
+        for pol in pols.geoms:
+            if not pol.is_valid or not pol.intersects(hovernet_pol):
+                continue
+            inter = pol.intersection(hovernet_pol).area
+            iou = inter / (area + 1e-7)
+            if iou > iou_thr:
+                filt_pols.append(hovernet_pol)
+                break
+    return MultiPolygon(filt_pols)

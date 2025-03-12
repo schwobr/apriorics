@@ -1,16 +1,20 @@
 import csv
-import re
+import json
 from argparse import ArgumentParser
 from multiprocessing import Pool
 from pathlib import Path
 
+import geopandas
 import numpy as np
-from pathaia.patches import filter_thumbnail
 from pathaia.patches.functional_api import slide_rois_no_image
 from pathaia.util.paths import get_files
 from pathaia.util.types import Patch, Slide
+from scipy.sparse import load_npz
+from shapely.geometry import MultiPolygon, Polygon, box
+from shapely.ops import unary_union
 from skimage.morphology import remove_small_objects
-from skimage.transform import resize
+
+from apriorics.dataset_preparation import filter_thumbnail_mask_extraction
 
 parser = ArgumentParser(prog="Generates the PathAIA patch CSVs for slides.")
 parser.add_argument(
@@ -22,8 +26,7 @@ parser.add_argument(
 parser.add_argument(
     "--maskfolder",
     type=Path,
-    help="Input folder containing mask tif files.",
-    required=True,
+    help="Input folder containing mask tif files. Optional.",
 )
 parser.add_argument(
     "--outfolder",
@@ -41,17 +44,25 @@ parser.add_argument(
     help="Specify to recurse through slidefolder when looking for svs files. Optional.",
 )
 parser.add_argument(
-    "--patch-size",
+    "--ihc_type",
+    help="Name of the IHC.",
+    required=True,
+)
+parser.add_argument(
+    "--slide_extension",
+    default=".svs",
+    help="File extension of slide files. Default .svs.",
+)
+parser.add_argument(
+    "--mask_extension",
+    default=".tif",
+    help="File extension of slide files. Default .svs.",
+)
+parser.add_argument(
+    "--patch_size",
     type=int,
     default=1024,
     help="Size of the (square) patches to extract. Default 1024.",
-)
-parser.add_argument(
-    "--file-filter",
-    help=(
-        "Regex filter input svs files by names. To filter a specific ihc id x, should"
-        r' be "^21I\d{6}-\d-\d\d-x_\d{6}". Optional.'
-    ),
 )
 parser.add_argument(
     "--level",
@@ -66,7 +77,7 @@ parser.add_argument(
     help="Part of the patches that should overlap. Default 0.",
 )
 parser.add_argument(
-    "--filter-pos",
+    "--filter_pos",
     type=int,
     default=0,
     help="Minimum number of positive pixels in mask to keep patch. Default 0.",
@@ -77,51 +88,73 @@ parser.add_argument(
     help="Specify to overwrite existing csvs. Optional.",
 )
 parser.add_argument(
-    "--num-workers",
+    "--num_workers",
     type=int,
     help="Number of workers to use for processing. Defaults to all available workers.",
 )
-
-
-def get_mask_filter(mask, thumb_size=2000):
-    thumb = np.asarray(mask.get_thumbnail((thumb_size, thumb_size)).convert("L")) > 0
-
-    def _filter(x):
-        mask = resize(thumb, x.shape[:2])
-        return mask
-
-    return _filter
-
+parser.add_argument(
+    "--export_geojson",
+    action="store_true",
+    help="Specify to save geojson representation of patch extractions. Optional.",
+)
+parser.add_argument("--regfolder", type=Path)
 
 if __name__ == "__main__":
-    args = parser.parse_args()
-    input_files = get_files(args.slidefolder, extensions=".svs", recurse=args.recurse)
-    if args.file_filter is not None:
-        filter_regex = re.compile(args.file_filter)
-        input_files = input_files.filter(lambda x: filter_regex.match(x.name))
+    args = parser.parse_known_args()[0]
+    input_files = get_files(
+        args.slidefolder / args.ihc_type / "HE",
+        extensions=args.slide_extension,
+        recurse=args.recurse,
+    )
     input_files.sort(key=lambda x: x.stem)
 
-    outfolder = args.outfolder / f"{args.patch_size}_{args.level}/patch_csvs"
+    outfolder = (
+        args.outfolder / args.ihc_type / f"{args.patch_size}_{args.level}/patch_csvs"
+    )
+    if not outfolder.exists():
+        outfolder.mkdir(parents=True)
+
+    geojsonfolder = (
+        args.outfolder
+        / args.ihc_type
+        / f"{args.patch_size}_{args.level}/patch_geojsons"
+    )
+    if args.export_geojson and not geojsonfolder.exists():
+        geojsonfolder.mkdir()
 
     interval = -int(args.overlap * args.patch_size)
 
     def write_patches(in_file_path):
-        out_file_path = outfolder / in_file_path.relative_to(
-            args.slidefolder
-        ).with_suffix(".csv")
+        out_file_path = outfolder / in_file_path.with_suffix(".csv").name
         if not args.overwrite and out_file_path.exists():
-            return
-        if not out_file_path.parent.exists():
-            out_file_path.parent.mkdir(parents=True)
-
-        mask_path = args.maskfolder / in_file_path.relative_to(
-            args.slidefolder
-        ).with_suffix(".tif")
-        if not mask_path.exists():
             return
 
         slide = Slide(in_file_path, backend="cucim")
-        mask = Slide(mask_path, backend="cucim")
+
+        if args.maskfolder is not None:
+            mask_path = args.maskfolder / in_file_path.relative_to(
+                args.slidefolder
+            ).with_suffix(args.mask_extension)
+            if not mask_path.exists():
+                return
+
+            if args.mask_extension == ".tif":
+                mask = Slide(mask_path, backend="cucim")
+            elif args.mask_extension == ".npz":
+                mask = load_npz(mask_path)
+        else:
+            mask = None
+
+        if args.regfolder is not None:
+            reg_path = (
+                args.regfolder / args.ihc_type / f"HE/{in_file_path.stem}.geojson"
+            )
+            if not reg_path.exists():
+                return
+            gdf = geopandas.read_file(reg_path)
+        else:
+            gdf = None
+
         print(in_file_path.stem)
 
         patches = slide_rois_no_image(
@@ -129,28 +162,59 @@ if __name__ == "__main__":
             args.level,
             psize=args.patch_size,
             interval=interval,
-            slide_filters=[filter_thumbnail],
+            slide_filters=[filter_thumbnail_mask_extraction],
             thumb_size=2000,
         )
 
+        pols = []
         with open(out_file_path, "w") as out_file:
             writer = csv.DictWriter(out_file, fieldnames=Patch.get_fields() + ["n_pos"])
             writer.writeheader()
             for patch in patches:
-                patch_mask = np.asarray(
-                    mask.read_region(patch.position, patch.level, patch.size).convert(
-                        "1"
-                    )
-                )
-                if args.filter_pos and patch_mask.sum():
-                    patch_mask = remove_small_objects(
-                        patch_mask, min_size=args.filter_pos
-                    )
+                if gdf is not None:
+                    x, y = patch.position
+                    w, h = patch.size
+                    pol = box(x, y, x + w, y + h)
+                    if not gdf["geometry"].contains(pol).any():
+                        continue
+
+                if mask is not None:
+                    if isinstance(mask, Slide):
+                        patch_mask = np.asarray(
+                            mask.read_region(
+                                patch.position, patch.level, patch.size
+                            ).convert("1")
+                        )
+                    else:
+                        w, h = patch.size
+                        x, y = patch.position
+                        patch_mask = mask[y : y + h, x : x + w].toarray()
+
+                    if args.filter_pos and patch_mask.sum():
+                        patch_mask = remove_small_objects(
+                            patch_mask, min_size=args.filter_pos
+                        )
+                    n_pos = patch_mask.sum()
+                else:
+                    n_pos = None
+
                 row = patch.to_csv_row()
-                n_pos = patch_mask.sum()
                 row["n_pos"] = n_pos
-                if n_pos >= args.filter_pos:
+                if n_pos is None or n_pos >= args.filter_pos:
                     writer.writerow(row)
+                    if args.export_geojson:
+                        x, y = patch.position
+                        w, h = patch.size
+                        pols.append(box(x, y, x + w, y + h))
+
+        if args.export_geojson:
+            pols = unary_union(pols)
+            if isinstance(pols, Polygon):
+                pols = MultiPolygon([pols])
+            with open(
+                geojsonfolder / in_file_path.with_suffix(".geojson").name, "w"
+            ) as f:
+                json.dump(geopandas.GeoSeries(pols.geoms).__geo_interface__, f)
 
     with Pool(processes=args.num_workers) as pool:
         pool.map(write_patches, input_files)

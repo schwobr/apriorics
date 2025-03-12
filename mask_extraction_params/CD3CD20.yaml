@@ -1,0 +1,5 @@
+ihc_params:
+  dab-thr: 0.01
+  object-min-size: 50
+  binary-op: closing
+  radius: 5

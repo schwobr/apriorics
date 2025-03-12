@@ -3,6 +3,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from matplotlib import pyplot as plt
 from matplotlib.cm import rainbow
 from pathaia.util.basic import ifnone
 from torch import Tensor, nn
@@ -13,12 +14,11 @@ from torch.optim.lr_scheduler import (
     ReduceLROnPlateau,
     _LRScheduler,
 )
-from torchmetrics import Metric
+from torchmetrics import ConfusionMatrix, Metric
 from torchvision.transforms.functional import to_pil_image
 from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks, make_grid
 
-from apriorics.losses import get_loss_name
-from apriorics.metrics import MetricCollection
+from apriorics.metrics import MetricCollection, PredictionHist
 from apriorics.model_components.utils import named_leaf_modules
 
 
@@ -86,6 +86,7 @@ class BasicSegmentationModule(pl.LightningModule):
         loss: nn.Module,
         lr: float,
         wd: float,
+        dl_lengths: Tuple[int, int],
         scheduler_func: Optional[Callable] = None,
         metrics: Optional[Sequence[Metric]] = None,
         stain_augmentor: Optional[nn.Module] = None,
@@ -95,6 +96,7 @@ class BasicSegmentationModule(pl.LightningModule):
         self.loss = loss
         self.lr = lr
         self.wd = wd
+        self.dl_lengths = dl_lengths
         self.scheduler_func = scheduler_func
         self.metrics = MetricCollection(ifnone(metrics, []))
         self.stain_augmentor = stain_augmentor
@@ -106,15 +108,21 @@ class BasicSegmentationModule(pl.LightningModule):
         x, y = batch
         if self.stain_augmentor is not None:
             with torch.autocast("cuda", enabled=False):
-                x = self.stain_augmentor(x)
+                try:
+                    x = self.stain_augmentor(x)
+                except RuntimeError:
+                    pass
         y_hat = self(x)
         loss = self.loss(y_hat, y)
 
-        if batch_idx % 500 == 0 and self.trainer.training_type_plugin.global_rank == 0:
+        if (
+            batch_idx % max(1, self.dl_lengths[0] // 5) == 0
+            and self.trainer.training_type_plugin.global_rank == 0
+        ):
             y_hat = torch.sigmoid(y_hat)
             self.log_images(x[:8], y[:8], y_hat[:8], batch_idx, step="train")
 
-        self.log(f"train_loss_{get_loss_name(self.loss)}", loss)
+        self.log("train_loss", loss)
         if self.sched is not None:
             self.log("learning_rate", self.sched["scheduler"].get_last_lr()[0])
         return loss
@@ -125,16 +133,39 @@ class BasicSegmentationModule(pl.LightningModule):
         x, y = batch
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        self.log(f"val_loss_{get_loss_name(self.loss)}", loss, sync_dist=True)
+        self.log("val_loss", loss, sync_dist=True)
 
         y_hat = torch.sigmoid(y_hat)
-        if batch_idx % 200 == 0 and self.trainer.training_type_plugin.global_rank == 0:
+        if (
+            batch_idx % max(1, self.dl_lengths[1] // 5) == 0
+            and self.trainer.training_type_plugin.global_rank == 0
+        ):
             self.log_images(x[:8], y[:8], y_hat[:8], batch_idx, step="val")
 
-        self.metrics(y_hat, y.int())
+        self.metrics(y_hat, y.int(), x=x)
 
     def validation_epoch_end(self, outputs: Dict[str, Tensor]):
         self.log_dict(self.metrics.compute(), sync_dist=True)
+        if "SegmentationAUC" in self.metrics:
+            met = self.metrics["SegmentationAUC"]
+            rec = (met.tp / (met.tp + met.fn + 1e-7)).cpu()
+            fpr = (met.fp / (met.tn + met.fp + 1e-7)).cpu()
+            prec = ((met.tp + 1e-7) / (met.tp + met.fp + 1e-7)).cpu()
+            self.logger.experiment.log_curve(
+                f"ROC_{self.current_epoch}",
+                x=fpr.tolist(),
+                y=rec.tolist(),
+                step=self.current_epoch,
+                overwrite=True,
+            )
+            self.logger.experiment.log_curve(
+                f"PRC_{self.current_epoch}",
+                x=rec.tolist(),
+                y=prec.tolist(),
+                step=self.current_epoch,
+                overwrite=True,
+            )
+        self.metrics.reset()
 
     def configure_optimizers(
         self,
@@ -159,7 +190,7 @@ class BasicSegmentationModule(pl.LightningModule):
         self.logger.experiment.log_image(
             to_pil_image(grid),
             f"{step}_image_sample_{self.current_epoch}_{batch_idx}",
-            step=self.current_epoch,
+            step=self.global_step,
         )
 
     def freeze_encoder(self):
@@ -191,6 +222,7 @@ class BasicDetectionModule(pl.LightningModule):
         model: nn.Module,
         lr: float,
         wd: float,
+        dl_lengths: Tuple[int, int],
         scheduler_func: Optional[Callable] = None,
         seg_metrics: Optional[Sequence[Metric]] = None,
         det_metrics: Optional[Sequence[Metric]] = None,
@@ -199,6 +231,7 @@ class BasicDetectionModule(pl.LightningModule):
         self.model = model
         self.lr = lr
         self.wd = wd
+        self.dl_lengths = dl_lengths
         self.scheduler_func = scheduler_func
         self.seg_metrics = MetricCollection(ifnone(seg_metrics, []))
         self.det_metrics = MetricCollection(ifnone(det_metrics, []))
@@ -230,7 +263,10 @@ class BasicDetectionModule(pl.LightningModule):
         x, y = batch
         y_hat = self(x)
 
-        if batch_idx % 100 == 0 and self.trainer.training_type_plugin.global_rank == 0:
+        if (
+            batch_idx % max(1, self.dl_lengths[1] // 5) == 0
+            and self.trainer.training_type_plugin.global_rank == 0
+        ):
             self.log_images(x, y, y_hat, batch_idx)
 
         masks_pred = []
@@ -258,6 +294,8 @@ class BasicDetectionModule(pl.LightningModule):
     def validation_epoch_end(self, outputs: Dict[str, Tensor]):
         self.log_dict(self.seg_metrics.compute(), sync_dist=True)
         det_dict = self.det_metrics.compute()
+        self.seg_metrics.reset()
+        self.det_metrics.reset()
         det_dict = {
             k: v
             for k, v in det_dict.items()
@@ -334,5 +372,155 @@ class BasicDetectionModule(pl.LightningModule):
         self.logger.experiment.log_image(
             to_pil_image(grid),
             f"val_image_sample_{self.current_epoch}_{batch_idx}",
-            step=self.current_epoch,
+            step=self.global_step,
         )
+
+
+class BasicClassificationModule(pl.LightningModule):
+    """
+    :class:`pytorch_lightning.LightningModule` to use for binary classification tasks.
+
+    Args:
+        model: underlying PyTorch model.
+        loss: loss function.
+        lr: learning rate.
+        wd: weight decay for AdamW optimizer.
+        scheduler_func: Function that takes an optimizer as input and returns a
+            scheduler dict formatted for PytorchLightning.
+        metrics: list of :class:`torchmetrics.Metric` metrics to compute on validation.
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        loss: nn.Module,
+        lr: float,
+        wd: float,
+        dl_lengths: Tuple[int, int],
+        scheduler_func: Optional[Callable] = None,
+        metrics: Optional[Sequence[Metric]] = None,
+        stain_augmentor: Optional[nn.Module] = None,
+    ):
+        super().__init__()
+        self.model = model
+        self.loss = loss
+        self.lr = lr
+        self.wd = wd
+        self.dl_lengths = dl_lengths
+        self.scheduler_func = scheduler_func
+        self.metrics = MetricCollection(ifnone(metrics, []))
+        self.stain_augmentor = stain_augmentor
+        self.cm = ConfusionMatrix(2)
+        self.hist = PredictionHist()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.model(x).squeeze(1)
+
+    def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
+        x, y = batch
+        if self.stain_augmentor is not None:
+            with torch.autocast("cuda", enabled=False):
+                x = self.stain_augmentor(x)
+        y_hat = self(x)
+        loss = self.loss(y_hat, y)
+
+        if (
+            batch_idx % max(1, self.dl_lengths[0] // 5) == 0
+            and self.trainer.training_type_plugin.global_rank == 0
+        ):
+            y_hat = torch.sigmoid(y_hat)
+            self.log_images(x, y, y_hat, batch_idx, step="train")
+
+        self.log("train_loss", loss)
+        if self.sched is not None:
+            self.log("learning_rate", self.sched["scheduler"].get_last_lr()[0])
+        return loss
+
+    def validation_step(
+        self, batch: Tuple[Tensor, Tensor], batch_idx: int, *args, **kwargs
+    ):
+        x, y = batch
+        y_hat = self(x)
+        loss = self.loss(y_hat, y)
+        self.log("val_loss", loss, sync_dist=True)
+
+        y_hat = torch.sigmoid(y_hat)
+        if (
+            batch_idx % max(1, self.dl_lengths[1] // 5) == 0
+            and self.trainer.training_type_plugin.global_rank == 0
+        ):
+            self.log_images(x, y, y_hat, batch_idx, step="val")
+
+        self.metrics(y_hat, y.int())
+        self.cm(y_hat, y.int())
+        self.hist(y_hat, y)
+
+    def validation_epoch_end(self, outputs: Dict[str, Tensor]):
+        self.log_dict(self.metrics.compute(), sync_dist=True)
+        self.metrics.reset()
+
+        matrix = self.cm.compute().cpu().tolist()
+        self.logger.experiment.log_confusion_matrix(
+            matrix=matrix,
+            title=f"epoch_{self.current_epoch}",
+            epoch=self.current_epoch,
+            step=self.global_step,
+        )
+        self.cm.reset()
+
+        bins = self.hist.bins
+        hists = self.hist.compute().cpu().numpy()
+        fig, axs = plt.subplots(2, 1, figsize=(20, 30))
+        for k, (hist, ax) in enumerate(zip(hists, axs.flatten())):
+            ax.bar(
+                bins[:-1],
+                hist,
+                width=self.hist.bin_size,
+                align="edge",
+                fc="skyblue",
+                ec="black",
+            )
+            ax.set_title(f"Prediction histogram for class {k}")
+        self.logger.experiment.log_figure(
+            figure_name=f"pred_hists_{self.current_epoch}", figure=fig
+        )
+        plt.close(fig)
+        self.hist.reset()
+
+    def configure_optimizers(
+        self,
+    ) -> Union[
+        Optimizer, Dict[str, Union[Optimizer, Dict[str, Union[str, _LRScheduler]]]]
+    ]:
+        self.opt = AdamW(self.parameters(), lr=self.lr, weight_decay=self.wd)
+        if self.scheduler_func is None:
+            self.sched = None
+            return self.opt
+        else:
+            self.sched = self.scheduler_func(self.opt)
+            return {"optimizer": self.opt, "lr_scheduler": self.sched}
+
+    def log_images(
+        self, x: Tensor, y: Tensor, y_hat: Tensor, batch_idx: int, step="val"
+    ):
+        for k, (img, target, pred) in enumerate(zip(x, y, y_hat)):
+            self.logger.experiment.log_image(
+                to_pil_image(img),
+                (
+                    f"{step}_image_sample_{self.current_epoch}_{batch_idx}_{k}_"
+                    f"t:{target.item()}/p:{pred.item():.3f}"
+                ).replace(".", ","),
+                step=self.global_step,
+            )
+
+
+def get_model(data_type, *args, **kwargs):
+    data_type = data_type.lower()
+    if "segmentation" in data_type:
+        return BasicSegmentationModule(*args, **kwargs)
+    elif "detection" in data_type:
+        return BasicDetectionModule(*args, **kwargs)
+    elif "classification" in data_type:
+        return BasicClassificationModule(*args, **kwargs)
+    else:
+        raise ValueError
